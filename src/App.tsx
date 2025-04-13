@@ -1,9 +1,11 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { listen } from '@tauri-apps/api/event';
+import { invoke } from '@tauri-apps/api/tauri';
 import './App.css';
 import { MainPage } from './pages/MainPage';
-import { useEffect, useRef, useState } from 'react';
-import { listen } from '@tauri-apps/api/event';
-import { AudioManager } from './components/AudioManager';
 import FlightStatusPanel from './components/FlightStatusPanel';
+import CameraPosition from './components/CameraPosition';
+import ViewDisplay from './components/ViewDisplay';
 
 interface FlightState {
   xPosition: number;
@@ -148,6 +150,10 @@ function App() {
 
   // Add a reference to track the previous beacon light state
   const lastBeaconLightStateRef = useRef<boolean>(false);
+
+  // Add audio ref for beacon light sound
+  const beaconLightSoundRef = useRef<HTMLAudioElement | null>(null);
+  const isBeaconAudioPlayingRef = useRef<boolean>(false);
 
   // Function to smoothly transition volume
   const fadeVolume = (element: HTMLAudioElement, targetVolume: number) => {
@@ -666,17 +672,41 @@ function App() {
   const playAnnouncementWithVolume = (audioRef: React.MutableRefObject<HTMLAudioElement | null>, audioName: string, onEndCallback?: () => void) => {
     if (!audioRef.current) {
       console.error(`${audioName} audio element not found`);
+      if (onEndCallback) {
+        // Still call the callback so state flags are reset properly
+        onEndCallback();
+      }
       return;
     }
     
+    console.log(`Playing announcement: ${audioName}`);
+    
+    // Get current zone and calculate proper volume
     const currentZ = flightState.zPosition || lastCameraZRef.current || 0;
     const zone = getCurrentZone(currentZ);
     const baseVolume = getZoneVolume(zone);
     const logVolume = toLogVolume(baseVolume * 100);
     const positionVolume = (masterVolume / 100) * logVolume;
     
+    console.log(`Audio ${audioName} volume calculation:`, {
+      zone,
+      baseVolume,
+      logVolume,
+      positionVolume,
+      masterVolume
+    });
+    
+    // Lower boarding music volume before playing announcement
+    if (boardingMusicRef.current) {
+      console.log(`Lowering boarding music volume for ${audioName} announcement`);
+      boardingMusicRef.current.volume = 0.05;
+    }
+    
+    // Set up audio for playback
     audioRef.current.volume = positionVolume;
     audioRef.current.currentTime = 0;
+    
+    // Attempt to play the audio
     audioRef.current.play()
       .then(() => {
         console.log(`Successfully started playing "${audioName}" announcement`);
@@ -691,6 +721,12 @@ function App() {
           setIsPlaying(false);
           setCurrentAudioName('');
           
+          // Restore boarding music volume if needed
+          if (boardingMusicRef.current && jetwayAttachedRef.current) {
+            console.log(`Restoring boarding music volume after ${audioName} announcement`);
+            boardingMusicRef.current.volume = 1.0;
+          }
+          
           if (onEndCallback) {
             onEndCallback();
           }
@@ -698,6 +734,15 @@ function App() {
       })
       .catch(error => {
         console.error(`Error playing "${audioName}" announcement:`, error);
+        setIsPlaying(false);
+        setCurrentAudioName('');
+        
+        // Restore boarding music volume on error
+        if (boardingMusicRef.current && jetwayAttachedRef.current) {
+          console.log(`Restoring boarding music volume after ${audioName} error`);
+          boardingMusicRef.current.volume = 1.0;
+        }
+        
         if (onEndCallback) {
           onEndCallback();
         }
@@ -922,6 +967,42 @@ function App() {
     if (newState !== lastBeaconLightStateRef.current) {
       console.log(`Beacon light state change detected. Previous: ${lastBeaconLightStateRef.current ? 'ON' : 'OFF'}, New: ${newState ? 'ON' : 'OFF'}`);
       
+      // If beacon light was turned ON (transition from OFF to ON)
+      if (!lastBeaconLightStateRef.current && newState) {
+        // If audio is currently playing, don't interrupt it
+        if (isBeaconAudioPlayingRef.current) {
+          console.log('Beacon light audio already playing, ignoring event');
+        } else {
+          // Play "Doors to Auto" sound when beacon light turns on
+          if (doorsAutoRef.current) {
+            console.log('Playing "Doors to Auto" sound for beacon light');
+            
+            // Set flag to track that beacon light audio is playing
+            isBeaconAudioPlayingRef.current = true;
+            
+            // Always stop welcome aboard announcements when playing doors auto
+            if (welcomeAboardTimerRef.current) {
+              console.log('Clearing welcome aboard announcement timer');
+              clearTimeout(welcomeAboardTimerRef.current);
+              welcomeAboardTimerRef.current = null;
+            }
+            
+            // Use the same playAnnouncementWithVolume function
+            playAnnouncementWithVolume(doorsAutoRef, 'doors_auto', () => {
+              console.log('"Doors to Auto" sound finished, resetting flag');
+              isBeaconAudioPlayingRef.current = false;
+              
+              // Restart welcome aboard announcements with random timer if jetway is attached
+              if (jetwayAttachedRef.current) {
+                scheduleWelcomeAboardAnnouncement();
+              }
+            });
+          } else {
+            console.error('Doors to Auto audio element not found');
+          }
+        }
+      }
+      
       // Update the last state after processing the change
       lastBeaconLightStateRef.current = newState;
       setFlightState(prev => ({
@@ -1020,8 +1101,13 @@ function App() {
       }
 
       const data = event.payload as { state: boolean };
+      console.log('=== Beacon Light Event Received ===');
       console.log('Beacon light event received:', data);
+      console.log('Current beacon state:', lastBeaconLightStateRef.current ? 'ON' : 'OFF');
+      
+      // Handle the state change
       handleBeaconLightChange(data.state);
+      console.log('=== End Beacon Light Event ===');
     } catch (error) {
       console.error('Error handling beacon light event:', error);
     }
@@ -1313,11 +1399,15 @@ function App() {
       }
       
       if (typeof data.beaconLight === 'boolean') {
-        console.log('SIMCONNECT DEBUG - Received valid beacon light state change:', data.beaconLight);
-        console.log('Current beacon light state:', beaconLight);
+        console.log('=== SimConnect Beacon Light State ===');
+        console.log('SimConnect: Received valid beacon light state change:', data.beaconLight ? 'ON' : 'OFF');
+        console.log('SimConnect: Current cached beacon light state:', lastBeaconLightStateRef.current ? 'ON' : 'OFF');
+        
+        // Process the state change through the dedicated handler
         handleBeaconLightChange(data.beaconLight);
+        console.log('=== End SimConnect Beacon Light State ===');
       } else {
-        console.log('SIMCONNECT DEBUG - Beacon light data is not a boolean:', data.beaconLight);
+        console.log('SimConnect: Beacon light data not a boolean:', data.beaconLight);
       }
       
       if (typeof data.gsxBypassPin === 'boolean') {
@@ -1829,7 +1919,7 @@ function App() {
       // Initialize all audio elements with proper paths
       initAudio(boardingMusicRef, '/sounds/announcements/Boarding-Music.mp3', 'boarding_music', true);
       initAudio(welcomeAboardRef, '/sounds/announcements/Welcome Aboard.wav', 'welcome_aboard');
-      initAudio(doorsAutoRef, '/sounds/announcements/Doors to Auto.wav', 'doors_auto');
+      initAudio(doorsAutoRef, '/sounds/announcements/Doors-to-Auto.wav', 'doors_auto');
       initAudio(tenKFeetRef, '/sounds/announcements/10k-feet.wav', '10k_feet');
       initAudio(arriveSoonRef, '/sounds/announcements/Arrive-soon.wav', 'arrive_soon');
       initAudio(landingSoonRef, '/sounds/announcements/landing-soon.wav', 'landing_soon');
@@ -2224,7 +2314,6 @@ function App() {
           {/* Controls Panel */}
           <div className="flex-1 bg-gray-800 rounded-lg shadow-lg p-6">
             <MainPage onDisconnect={stopAllAudio} />
-            <AudioManager />
           </div>
         </div>
       </div>
