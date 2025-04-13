@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { listen } from '@tauri-apps/api/event';
 
 interface FlightData {
@@ -136,58 +136,12 @@ export function FlightDataDisplay() {
                 </div>
             </div>
 
-            {/* Aircraft Heading and Systems */}
-            <div className="grid grid-cols-2 gap-4">
-                <div>
-                    <h4 className="text-sm font-medium text-gray-400">Direction</h4>
-                    <p className="text-sm text-gray-300">
-                        <span className="font-medium text-gray-200">Heading:</span> {flightData?.head?.toFixed(0) ?? 'N/A'}°
-                    </p>
-                </div>
-
-                <div>
-                    <h4 className="text-sm font-medium text-gray-400">Systems</h4>
-                    <div className="space-y-1">
-                        <p className="text-sm flex items-center gap-2 text-gray-300">
-                            <span className="font-medium text-gray-200">Beacon Light:</span>
-                            <span className={`inline-block w-2 h-2 rounded-full ${
-                                beaconLight ? 'bg-green-400' : 'bg-red-400'
-                            }`} />
-                            {beaconLight ? 'ON' : 'OFF'}
-                        </p>
-                        <p className="text-sm flex items-center gap-2 text-gray-300">
-                            <span className="font-medium text-gray-200">Seatbelt Sign:</span>
-                            <span className={`inline-block w-2 h-2 rounded-full ${
-                                seatbeltSign ? 'bg-green-400' : 'bg-red-400'
-                            }`} />
-                            {seatbeltSign ? 'ON' : 'OFF'}
-                        </p>
-                        <p className="text-sm flex items-center gap-2 text-gray-300">
-                            <span className="font-medium text-gray-200">Jetway:</span>
-                            <span className={`inline-block w-2 h-2 rounded-full ${
-                                flightData?.jetwayMoving ? 'bg-yellow-400' :
-                                flightData?.jetwayState ? 'bg-green-400' : 'bg-red-400'
-                            }`} />
-                            {flightData?.jetwayMoving ? 'MOVING' :
-                             flightData?.jetwayState ? 'ATTACHED' : 'DETACHED'}
-                        </p>
-                    </div>
-                </div>
-            </div>
-
-            {/* Jetway Status */}
-            <div className="mb-4">
-                <h3 className="text-gray-400 font-semibold mb-2">Jetway Status</h3>
-                <div className="flex items-center space-x-2">
-                    <div className={`h-3 w-3 rounded-full ${
-                        flightData?.jetwayMoving ? 'bg-yellow-400' :
-                        flightData?.jetwayState ? 'bg-green-400' : 'bg-red-400'
-                    }`} />
-                    <span className="text-gray-300">
-                        {flightData?.jetwayMoving ? 'MOVING' :
-                         flightData?.jetwayState ? 'ATTACHED' : 'DETACHED'}
-                    </span>
-                </div>
+            {/* Aircraft Heading */}
+            <div>
+                <h4 className="text-sm font-medium text-gray-400">Direction</h4>
+                <p className="text-sm text-gray-300">
+                    <span className="font-medium text-gray-200">Heading:</span> {flightData?.head?.toFixed(0) ?? 'N/A'}°
+                </p>
             </div>
         </div>
     );

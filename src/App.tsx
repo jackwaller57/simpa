@@ -3,15 +3,20 @@ import { MainPage } from './pages/MainPage';
 import { useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { AudioManager } from './components/AudioManager';
+import FlightStatusPanel from './components/FlightStatusPanel';
 
 interface FlightState {
-  zPosition: number;
-  cameraPosition: string;
-  cameraViewType: string;
-  volumeLevel: number;
   xPosition: number;
   yPosition: number;
-  altitude: number;
+  zPosition: number;
+  speed: number;
+  heading: number;
+  altitude?: number;
+  cameraViewType: string;
+  beaconLight: boolean;
+  seatbeltSign: boolean;
+  jetwayMoving: boolean;
+  jetwayState: number;
 }
 
 interface CameraPositionPayload {
@@ -42,13 +47,16 @@ function App() {
   const [currentAudioVolume, setCurrentAudioVolume] = useState<number>(0);
   const [currentZone, setCurrentZone] = useState<string>('outside');
   const [flightState, setFlightState] = useState<FlightState>({
+    xPosition: 0,
+    yPosition: 0,
     zPosition: 0,
-    cameraPosition: 'exterior',
+    speed: 0,
+    heading: 0,
     cameraViewType: 'external',
-    volumeLevel: 0.0,
-    xPosition: 0.0,
-    yPosition: 0.0,
-    altitude: 0
+    beaconLight: false,
+    seatbeltSign: false,
+    jetwayMoving: false,
+    jetwayState: 0
   });
   const [hasLanded, setHasLanded] = useState<boolean>(false);
   const [touchdownData, setTouchdownData] = useState<{
@@ -512,22 +520,16 @@ function App() {
 
   // Function to handle seatbelt sign changes
   const handleSeatbeltSignChange = (newState: boolean) => {
-    console.log(`Seatbelt sign state changed: ${newState}`);
-    console.log(`Current seatbelt sign count: ${seatbeltSignCountRef.current}`);
-    console.log(`Almost ready audio element state:`, {
-      readyState: almostReadyRef.current?.readyState,
-      error: almostReadyRef.current?.error,
-      src: almostReadyRef.current?.src,
-      volume: almostReadyRef.current?.volume,
-      muted: almostReadyRef.current?.muted
-    });
+    console.log('=== Seatbelt Sign State Change ===');
+    console.log(`New State: ${newState ? 'ON' : 'OFF'}`);
+    console.log(`Previous Count: ${seatbeltSignCountRef.current}`);
     
     setSeatbeltSign(newState);
     
     if (newState) {
       // Increment the seatbelt sign count
       seatbeltSignCountRef.current++;
-      console.log(`Seatbelt sign count: ${seatbeltSignCountRef.current}`);
+      console.log(`Updated Count: ${seatbeltSignCountRef.current}`);
       
       // Play appropriate announcement based on count
       if (seatbeltSignCountRef.current === 1) {
@@ -535,27 +537,21 @@ function App() {
         if (almostReadyRef.current) {
           console.log('Playing "Almost ready to go" announcement');
           
-          // Stop welcome aboard announcements
+          // Always stop welcome aboard announcements
           if (welcomeAboardTimerRef.current) {
             console.log('Clearing welcome aboard announcement timer');
             clearTimeout(welcomeAboardTimerRef.current);
             welcomeAboardTimerRef.current = null;
           }
           
+          // Set flag to track the "Almost ready" announcement is playing
+          isAlmostReadyPlayingRef.current = true;
+          
           const currentZ = flightState.zPosition || lastCameraZRef.current || 0;
           const zone = getCurrentZone(currentZ);
           const baseVolume = getZoneVolume(zone);
           const logVolume = toLogVolume(baseVolume * 100);
           const positionVolume = (masterVolume / 100) * logVolume;
-          
-          console.log('Volume calculation:', {
-            currentZ,
-            zone,
-            baseVolume,
-            logVolume,
-            positionVolume,
-            masterVolume
-          });
           
           almostReadyRef.current.volume = positionVolume;
           almostReadyRef.current.currentTime = 0;
@@ -572,56 +568,66 @@ function App() {
                 console.log('"Almost ready to go" announcement finished playing');
                 setIsPlaying(false);
                 setCurrentAudioName('');
+                isAlmostReadyPlayingRef.current = false;
                 
                 // Restart welcome aboard announcements with random timer
                 if (jetwayAttachedRef.current) {
-                  console.log('Restarting welcome aboard announcements');
+                  console.log('Restarting welcome aboard announcements after "Almost ready" announcement');
                   const randomInterval = Math.floor(Math.random() * (140000 - 30000) + 30000); // Random between 30-140 seconds
                   console.log(`Scheduling next welcome aboard announcement in ${randomInterval/1000} seconds`);
+                  
+                  // Clear any existing timer before setting a new one
+                  if (welcomeAboardTimerRef.current) {
+                    clearTimeout(welcomeAboardTimerRef.current);
+                  }
+                  
                   welcomeAboardTimerRef.current = window.setTimeout(() => {
                     if (welcomeAboardRef.current && jetwayAttachedRef.current) {
-                      console.log('Playing subsequent welcome aboard announcement');
+                      console.log('Playing welcome aboard announcement after "Almost ready" finished');
                       if (boardingMusicRef.current) {
                         boardingMusicRef.current.volume = 0.05;
                       }
                       welcomeAboardRef.current.currentTime = 0;
                       welcomeAboardRef.current.play()
                         .then(() => {
-                          console.log('Successfully started playing subsequent welcome aboard announcement');
+                          console.log('Successfully started playing welcome aboard announcement');
                           welcomeAboardRef.current?.addEventListener('ended', () => {
-                            console.log('Subsequent welcome aboard announcement finished playing');
+                            console.log('Welcome aboard announcement finished playing');
                             if (boardingMusicRef.current) {
                               boardingMusicRef.current.volume = 1.0;
                             }
-                            // Schedule next announcement
-                            const nextInterval = Math.floor(Math.random() * (140000 - 30000) + 30000);
-                            console.log(`Scheduling next welcome aboard announcement in ${nextInterval/1000} seconds`);
-                            welcomeAboardTimerRef.current = window.setTimeout(() => {
-                              if (welcomeAboardRef.current && jetwayAttachedRef.current) {
-                                console.log('Playing subsequent welcome aboard announcement');
-                                if (boardingMusicRef.current) {
-                                  boardingMusicRef.current.volume = 0.05;
+                            
+                            // Schedule next announcement only if the "Almost ready" is not playing
+                            if (!isAlmostReadyPlayingRef.current) {
+                              const nextInterval = Math.floor(Math.random() * (140000 - 30000) + 30000);
+                              console.log(`Scheduling next welcome aboard announcement in ${nextInterval/1000} seconds`);
+                              welcomeAboardTimerRef.current = window.setTimeout(() => {
+                                if (welcomeAboardRef.current && jetwayAttachedRef.current && !isAlmostReadyPlayingRef.current) {
+                                  console.log('Playing subsequent welcome aboard announcement');
+                                  if (boardingMusicRef.current) {
+                                    boardingMusicRef.current.volume = 0.05;
+                                  }
+                                  welcomeAboardRef.current.currentTime = 0;
+                                  welcomeAboardRef.current.play()
+                                    .then(() => {
+                                      console.log('Successfully started playing subsequent welcome aboard announcement');
+                                      welcomeAboardRef.current?.addEventListener('ended', () => {
+                                        console.log('Subsequent welcome aboard announcement finished playing');
+                                        if (boardingMusicRef.current) {
+                                          boardingMusicRef.current.volume = 1.0;
+                                        }
+                                      }, { once: true });
+                                    })
+                                    .catch(error => {
+                                      console.error('Error playing subsequent welcome aboard:', error);
+                                    });
                                 }
-                                welcomeAboardRef.current.currentTime = 0;
-                                welcomeAboardRef.current.play()
-                                  .then(() => {
-                                    console.log('Successfully started playing subsequent welcome aboard announcement');
-                                    welcomeAboardRef.current?.addEventListener('ended', () => {
-                                      console.log('Subsequent welcome aboard announcement finished playing');
-                                      if (boardingMusicRef.current) {
-                                        boardingMusicRef.current.volume = 1.0;
-                                      }
-                                    }, { once: true });
-                                  })
-                                  .catch(error => {
-                                    console.error('Error playing subsequent welcome aboard:', error);
-                                  });
-                              }
-                            }, nextInterval);
+                              }, nextInterval);
+                            }
                           }, { once: true });
                         })
                         .catch(error => {
-                          console.error('Error playing subsequent welcome aboard:', error);
+                          console.error('Error playing welcome aboard:', error);
                         });
                     }
                   }, randomInterval);
@@ -630,6 +636,7 @@ function App() {
             })
             .catch(error => {
               console.error('Error playing "Almost ready to go" announcement:', error);
+              isAlmostReadyPlayingRef.current = false;
             });
         } else {
           console.error('Almost ready audio element not found');
@@ -643,15 +650,6 @@ function App() {
           const baseVolume = getZoneVolume(zone);
           const logVolume = toLogVolume(baseVolume * 100);
           const positionVolume = (masterVolume / 100) * logVolume;
-          
-          console.log('Volume calculation:', {
-            currentZ,
-            zone,
-            baseVolume,
-            logVolume,
-            positionVolume,
-            masterVolume
-          });
           
           fastenSeatbeltRef.current.volume = positionVolume;
           fastenSeatbeltRef.current.currentTime = 0;
@@ -673,8 +671,9 @@ function App() {
     } else {
       // Reset count when seatbelt sign is turned off
       seatbeltSignCountRef.current = 0;
-      console.log('Seatbelt sign turned off - resetting count');
+      console.log('Seatbelt sign turned off - resetting count to 0');
     }
+    console.log('=== End Seatbelt Sign State Change ===');
   };
 
   // Function to handle GSX bypass pin changes
@@ -698,8 +697,22 @@ function App() {
     
     // If pin was just inserted, play safety video
     if (newState) {
-      console.log('GSX bypass pin inserted - playing safety video');
-      if (safetyVideoRef.current) {
+      console.log('GSX bypass pin inserted - preparing to play safety video');
+      
+      // Function to attempt playing the safety video
+      const playSafetyVideo = () => {
+        if (!safetyVideoRef.current) {
+          console.error('Safety video audio element not found');
+          return;
+        }
+
+        // Ensure audio is ready
+        if (safetyVideoRef.current.readyState < 2) {
+          console.log('Safety video audio not ready yet, waiting...');
+          setTimeout(playSafetyVideo, 1000); // Retry after 1 second
+          return;
+        }
+
         // Stop any currently playing safety video
         safetyVideoRef.current.pause();
         safetyVideoRef.current.currentTime = 0;
@@ -762,9 +775,10 @@ function App() {
               boardingMusicRef.current.volume = 1.0;
             }
           });
-      } else {
-        console.error('Safety video audio element not found');
-      }
+      };
+
+      // Start the playback process with a small delay to ensure everything is ready
+      setTimeout(playSafetyVideo, 1000);
     }
   };
 
@@ -776,6 +790,9 @@ function App() {
         console.error('Invalid simconnect data event:', event);
         return;
       }
+
+      // Debug the entire payload to check what's being received
+      console.log('SIMCONNECT DEBUG - Raw payload:', JSON.stringify(event.payload));
 
       const data = event.payload as { 
         alt?: number, 
@@ -803,6 +820,22 @@ function App() {
         gsxBypassPin?: boolean
       };
       
+      // Enhanced debugging for beacon light and seatbelt sign properties
+      console.log('SIMCONNECT DEBUG - Specific property check:');
+      console.log('  beaconLight property:', {
+        value: data.beaconLight,
+        type: typeof data.beaconLight,
+        exists: 'beaconLight' in data
+      });
+      console.log('  seatbeltSign property:', {
+        value: data.seatbeltSign,
+        type: typeof data.seatbeltSign,
+        exists: 'seatbeltSign' in data
+      });
+      
+      // Debug for all property names in the payload
+      console.log('SIMCONNECT DEBUG - All property names:', Object.keys(event.payload));
+
       // Handle altitude data
       if (typeof data.alt === 'number' && !isNaN(data.alt)) {
         const currentAlt = data.alt;
@@ -936,12 +969,17 @@ function App() {
         console.log('Camera Z position updated:', data.zPosition);
         setFlightState(prev => ({
           ...prev,
-          zPosition: data.zPosition as number,
-          cameraPosition: data.cameraPosition || prev.cameraPosition,
-          cameraViewType: data.cameraViewType || prev.cameraViewType,
-          volumeLevel: data.volumeLevel || prev.volumeLevel,
-          xPosition: data.xPosition || prev.xPosition,
-          yPosition: data.yPosition || prev.yPosition
+          xPosition: data.xPosition ?? prev.xPosition,
+          yPosition: data.yPosition ?? prev.yPosition,
+          zPosition: data.zPosition ?? prev.zPosition,
+          speed: 0, // Default speed
+          heading: 0, // Default heading
+          altitude: data.alt ?? prev.altitude,
+          cameraViewType: data.cameraViewType ?? prev.cameraViewType,
+          beaconLight: data.beaconLight ?? prev.beaconLight,
+          seatbeltSign: data.seatbeltSign ?? prev.seatbeltSign,
+          jetwayMoving: data.jetwayMoving ?? prev.jetwayMoving,
+          jetwayState: data.jetwayState ? 1 : 0
         }));
         
         lastCameraZRef.current = data.zPosition;
@@ -965,12 +1003,22 @@ function App() {
       
       // Update other states
       if (typeof data.seatbeltSign === 'boolean') {
-        console.log('Received seatbelt sign state change:', data.seatbeltSign);
+        console.log('SIMCONNECT DEBUG - Received valid seatbelt sign state change:', data.seatbeltSign);
+        console.log('Current seatbelt sign state:', seatbeltSign);
+        console.log('Current seatbelt sign count:', seatbeltSignCountRef.current);
         handleSeatbeltSignChange(data.seatbeltSign);
+      } else {
+        console.log('SIMCONNECT DEBUG - Seatbelt sign data is not a boolean:', data.seatbeltSign);
       }
+      
       if (typeof data.beaconLight === 'boolean') {
+        console.log('SIMCONNECT DEBUG - Received valid beacon light state change:', data.beaconLight);
+        console.log('Current beacon light state:', beaconLight);
         setBeaconLight(data.beaconLight);
+      } else {
+        console.log('SIMCONNECT DEBUG - Beacon light data is not a boolean:', data.beaconLight);
       }
+      
       if (typeof data.gsxBypassPin === 'boolean') {
         // Skip if we've already played the safety video for this flight
         if (safetyVideoPlayedRef.current) {
@@ -991,8 +1039,22 @@ function App() {
         
         // If pin was just inserted, play safety video
         if (data.gsxBypassPin && !oldState) {
-          console.log('GSX bypass pin inserted - playing safety video');
-          if (safetyVideoRef.current) {
+          console.log('GSX bypass pin inserted - preparing to play safety video');
+          
+          // Function to attempt playing the safety video
+          const playSafetyVideo = () => {
+            if (!safetyVideoRef.current) {
+              console.error('Safety video audio element not found');
+              return;
+            }
+
+            // Ensure audio is ready
+            if (safetyVideoRef.current.readyState < 2) {
+              console.log('Safety video audio not ready yet, waiting...');
+              setTimeout(playSafetyVideo, 1000); // Retry after 1 second
+              return;
+            }
+
             // Stop any currently playing safety video
             safetyVideoRef.current.pause();
             safetyVideoRef.current.currentTime = 0;
@@ -1055,9 +1117,10 @@ function App() {
                   boardingMusicRef.current.volume = 1.0;
                 }
               });
-          } else {
-            console.error('Safety video audio element not found');
-          }
+          };
+
+          // Start the playback process with a small delay to ensure everything is ready
+          setTimeout(playSafetyVideo, 1000);
         }
       }
 
@@ -1105,6 +1168,50 @@ function App() {
       handleLandingLightsChange(data.state);
     } catch (error) {
       console.error('Error processing landing lights change:', error);
+    }
+  });
+
+  // Listen for beacon light changes
+  const unlistenBeaconLight = listen('beacon-light-changed', (event) => {
+    try {
+      if (!event || !event.payload) {
+        console.error('Invalid beacon light event:', event);
+        return;
+      }
+
+      const data = event.payload as { state: boolean };
+      console.log('Beacon light event received:', data);
+      setBeaconLight(data.state);
+      
+      // Also update the flight state
+      setFlightState(prev => ({
+        ...prev,
+        beaconLight: data.state
+      }));
+    } catch (error) {
+      console.error('Error processing beacon light change:', error);
+    }
+  });
+
+  // Listen for seatbelt sign changes
+  const unlistenSeatbeltSign = listen('seatbelt-switch-changed', (event) => {
+    try {
+      if (!event || !event.payload) {
+        console.error('Invalid seatbelt sign event:', event);
+        return;
+      }
+
+      const data = event.payload as { state: boolean };
+      console.log('Seatbelt sign event received:', data);
+      handleSeatbeltSignChange(data.state);
+      
+      // Also update the flight state
+      setFlightState(prev => ({
+        ...prev,
+        seatbeltSign: data.state
+      }));
+    } catch (error) {
+      console.error('Error processing seatbelt sign change:', error);
     }
   });
 
@@ -1311,110 +1418,119 @@ function App() {
   useEffect(() => {
     console.log('Initializing audio files...');
     
-    const initAudio = (ref: React.MutableRefObject<HTMLAudioElement | null>, src: string, id: string, loop: boolean = false) => {
-      if (ref.current) {
-        console.log(`Audio element ${id} already initialized`);
-        return;
-      }
-
-      console.log(`Initializing audio: ${src}`);
-      ref.current = new Audio();
-      ref.current.src = src;
-      ref.current.preload = 'auto';
-      ref.current.id = id;
-      if (loop) ref.current.loop = true;
+    // Add a 3-second delay before initializing audio files
+    const initializeAudioWithDelay = () => {
+      console.log('Starting audio initialization after delay...');
       
-      // Add error handling with retry logic
-      const handleError = (error: any) => {
-        console.error(`Error loading audio file ${src}:`, error);
-        // Try to load the file again after a short delay
-        setTimeout(() => {
-          if (ref.current) {
-            console.log(`Retrying to load audio file: ${src}`);
-            ref.current.load();
-          }
-        }, 1000);
-      };
-      
-      ref.current.onerror = handleError;
-      
-      // Add load event listener
-      ref.current.addEventListener('loadeddata', () => {
-        console.log(`Audio file loaded: ${src}, readyState: ${ref.current?.readyState}`);
-      });
-
-      // Add error event listener
-      ref.current.addEventListener('error', handleError);
-
-      // Add abort event listener
-      ref.current.addEventListener('abort', () => {
-        console.log(`Loading of audio file ${src} was aborted`);
-        // Try to load the file again after a short delay
-        setTimeout(() => {
-          if (ref.current) {
-            console.log(`Retrying to load audio file: ${src}`);
-            ref.current.load();
-          }
-        }, 1000);
-      });
-
-      // Add canplaythrough event listener
-      ref.current.addEventListener('canplaythrough', () => {
-        console.log(`Successfully loaded audio file: ${src}`);
-      });
-    };
-
-    // Initialize all audio elements with proper paths
-    initAudio(boardingMusicRef, '/sounds/announcements/Boarding-Music.mp3', 'boarding_music', true);
-    initAudio(welcomeAboardRef, '/sounds/announcements/Welcome Aboard.wav', 'welcome_aboard');
-    initAudio(doorsAutoRef, '/sounds/announcements/Doors to Auto.wav', 'doors_auto');
-    initAudio(tenKFeetRef, '/sounds/announcements/10k-feet.wav', '10k_feet');
-    initAudio(arriveSoonRef, '/sounds/announcements/Arrive-soon.wav', 'arrive_soon');
-    initAudio(landingSoonRef, '/sounds/announcements/landing-soon.wav', 'landing_soon');
-    initAudio(weveArrivedRef, '/sounds/announcements/We\'ve-arrvied.wav', 'weve_arrived');
-    initAudio(almostReadyRef, '/sounds/announcements/Almost-ready-to-go.wav', 'almost_ready');
-    initAudio(seatsForDepartureRef, '/sounds/announcements/Seats-For-Departure.wav', 'seats_for_departure');
-    initAudio(safetyVideoRef, '/sounds/announcements/A319-Safety-Video.mp3', 'safety_video');
-    initAudio(fastenSeatbeltRef, '/sounds/announcements/fasten-seatbelt.mp3', 'fasten_seatbelt');
-
-    // Add a check to verify all audio elements are loaded
-    const checkAudioElements = () => {
-      const audioRefs = [
-        { ref: boardingMusicRef, name: 'boarding music' },
-        { ref: welcomeAboardRef, name: 'welcome aboard' },
-        { ref: doorsAutoRef, name: 'doors auto' },
-        { ref: tenKFeetRef, name: '10k feet' },
-        { ref: arriveSoonRef, name: 'arrive soon' },
-        { ref: landingSoonRef, name: 'landing soon' },
-        { ref: weveArrivedRef, name: 'weve arrived' },
-        { ref: almostReadyRef, name: 'almost ready' },
-        { ref: seatsForDepartureRef, name: 'seats for departure' },
-        { ref: safetyVideoRef, name: 'safety video' },
-        { ref: fastenSeatbeltRef, name: 'fasten seatbelt' }
-      ];
-
-      audioRefs.forEach(({ ref, name }) => {
+      const initAudio = (ref: React.MutableRefObject<HTMLAudioElement | null>, src: string, id: string, loop: boolean = false) => {
         if (ref.current) {
-          console.log(`${name} audio element:`, {
-            readyState: ref.current.readyState,
-            error: ref.current.error,
-            src: ref.current.src,
-            volume: ref.current.volume,
-            muted: ref.current.muted,
-            paused: ref.current.paused,
-            currentTime: ref.current.currentTime
-          });
-        } else {
-          console.error(`${name} audio element not initialized`);
+          console.log(`Audio element ${id} already initialized`);
+          return;
         }
-      });
+
+        console.log(`Initializing audio: ${src}`);
+        ref.current = new Audio();
+        ref.current.src = src;
+        ref.current.preload = 'auto';
+        ref.current.id = id;
+        if (loop) ref.current.loop = true;
+        
+        // Add error handling with retry logic
+        const handleError = (error: any) => {
+          console.error(`Error loading audio file ${src}:`, error);
+          // Try to load the file again after a short delay
+          setTimeout(() => {
+            if (ref.current) {
+              console.log(`Retrying to load audio file: ${src}`);
+              ref.current.load();
+            }
+          }, 1000);
+        };
+        
+        ref.current.onerror = handleError;
+        
+        // Add load event listener
+        ref.current.addEventListener('loadeddata', () => {
+          console.log(`Audio file loaded: ${src}, readyState: ${ref.current?.readyState}`);
+        });
+
+        // Add error event listener
+        ref.current.addEventListener('error', handleError);
+
+        // Add abort event listener
+        ref.current.addEventListener('abort', () => {
+          console.log(`Loading of audio file ${src} was aborted`);
+          // Try to load the file again after a short delay
+          setTimeout(() => {
+            if (ref.current) {
+              console.log(`Retrying to load audio file: ${src}`);
+              ref.current.load();
+            }
+          }, 1000);
+        });
+
+        // Add canplaythrough event listener
+        ref.current.addEventListener('canplaythrough', () => {
+          console.log(`Successfully loaded audio file: ${src}`);
+        });
+      };
+
+      // Initialize all audio elements with proper paths
+      initAudio(boardingMusicRef, '/sounds/announcements/Boarding-Music.mp3', 'boarding_music', true);
+      initAudio(welcomeAboardRef, '/sounds/announcements/Welcome Aboard.wav', 'welcome_aboard');
+      initAudio(doorsAutoRef, '/sounds/announcements/Doors to Auto.wav', 'doors_auto');
+      initAudio(tenKFeetRef, '/sounds/announcements/10k-feet.wav', '10k_feet');
+      initAudio(arriveSoonRef, '/sounds/announcements/Arrive-soon.wav', 'arrive_soon');
+      initAudio(landingSoonRef, '/sounds/announcements/landing-soon.wav', 'landing_soon');
+      initAudio(weveArrivedRef, '/sounds/announcements/We\'ve-arrvied.wav', 'weve_arrived');
+      initAudio(almostReadyRef, '/sounds/announcements/Almost-ready-to-go.wav', 'almost_ready');
+      initAudio(seatsForDepartureRef, '/sounds/announcements/Seats-For-Departure.wav', 'seats_for_departure');
+      initAudio(safetyVideoRef, '/sounds/announcements/A319-Safety-Video.mp3', 'safety_video');
+      initAudio(fastenSeatbeltRef, '/sounds/announcements/fasten-seatbelt.mp3', 'fasten_seatbelt');
+
+      // Add a check to verify all audio elements are loaded
+      const checkAudioElements = () => {
+        const audioRefs = [
+          { ref: boardingMusicRef, name: 'boarding music' },
+          { ref: welcomeAboardRef, name: 'welcome aboard' },
+          { ref: doorsAutoRef, name: 'doors auto' },
+          { ref: tenKFeetRef, name: '10k feet' },
+          { ref: arriveSoonRef, name: 'arrive soon' },
+          { ref: landingSoonRef, name: 'landing soon' },
+          { ref: weveArrivedRef, name: 'weve arrived' },
+          { ref: almostReadyRef, name: 'almost ready' },
+          { ref: seatsForDepartureRef, name: 'seats for departure' },
+          { ref: safetyVideoRef, name: 'safety video' },
+          { ref: fastenSeatbeltRef, name: 'fasten seatbelt' }
+        ];
+
+        audioRefs.forEach(({ ref, name }) => {
+          if (ref.current) {
+            console.log(`${name} audio element:`, {
+              readyState: ref.current.readyState,
+              error: ref.current.error,
+              src: ref.current.src,
+              volume: ref.current.volume,
+              muted: ref.current.muted,
+              paused: ref.current.paused,
+              currentTime: ref.current.currentTime
+            });
+          } else {
+            console.error(`${name} audio element not initialized`);
+          }
+        });
+      };
+
+      // Check audio elements after a short delay to allow for loading
+      setTimeout(checkAudioElements, 2000);
     };
 
-    // Check audio elements after a short delay to allow for loading
-    setTimeout(checkAudioElements, 2000);
+    // Set a 3-second delay before starting audio initialization
+    const initializationTimer = setTimeout(initializeAudioWithDelay, 3000);
 
     // Return cleanup function
     return () => {
+      clearTimeout(initializationTimer);
       // Cleanup all audio elements
       [
         boardingMusicRef,
@@ -1443,6 +1559,8 @@ function App() {
     return () => {
       unlistenSimconnect.then(fn => fn());
       unlistenLandingLights.then(fn => fn());
+      unlistenBeaconLight.then(fn => fn());
+      unlistenSeatbeltSign.then(fn => fn());
     };
   }, []);
 
@@ -1550,113 +1668,37 @@ function App() {
   }, [flightState.zPosition, masterVolume]);
 
   return (
-    <div className="container">
-      <div className="status-panel">
-        <h3>Flight Status</h3>
-        <div className="status-item">
-          <span className="status-label">View Type:</span>
-          <span className="status-value">{flightState.cameraViewType}</span>
-        </div>
-        <div className="status-item">
-          <span className="status-label">Volume Level:</span>
-          <span className="status-value">{Math.round(currentVolume)}%</span>
-        </div>
-        <div className="status-item">
-          <span className="status-label">Master Volume:</span>
-          <input
-            type="range"
-            min="0"
-            max="100"
-            value={masterVolume}
-            onChange={handleVolumeChange}
-            className="volume-slider"
-          />
-          <span className="status-value">{masterVolume}%</span>
-        </div>
-        <div className="status-item">
-          <span className="status-label">Cockpit Door:</span>
-          <span className="status-value">{cockpitDoorOpen ? 'Open' : 'Closed'}</span>
-        </div>
-        <div className="status-item">
-          <span className="status-label">Camera Position:</span>
-          <span className="status-value">{cameraPosition}</span>
-        </div>
-        <div className="status-item">
-          <span className="status-label">X:</span>
-          <span className="status-value">{flightState.xPosition.toFixed(2)}</span>
-        </div>
-        <div className="status-item">
-          <span className="status-label">Y:</span>
-          <span className="status-value">{flightState.yPosition.toFixed(2)}</span>
-        </div>
-        <div className="status-item">
-          <span className="status-label">Z:</span>
-          <span className="status-value">{flightState.zPosition.toFixed(2)}</span>
-        </div>
-        <div className="status-item">
-          <span className="status-label">Altitude:</span>
-          <span className="status-value">{flightState.altitude?.toFixed(0) ?? 'N/A'} ft</span>
-        </div>
-        <div className="status-item">
-          <span className="status-label">Current Zone:</span>
-          <span className="status-value">{currentZone}</span>
-        </div>
-        <div className="status-item">
-          <span className="status-label">Audio Status:</span>
-          <span className="status-value">{isPlaying ? `Playing: ${currentAudioName}` : 'No audio playing'}</span>
-        </div>
-        <div className="status-item">
-          <span className="status-label">Audio Volume:</span>
-          <span className="status-value">{Math.round(currentAudioVolume)}%</span>
-        </div>
-      </div>
-      <MainPage onDisconnect={stopAllAudio} />
-      <div style={{ position: 'fixed', bottom: 20, right: 20, backgroundColor: 'rgba(0,0,0,0.7)', padding: '10px', borderRadius: '5px', color: 'white', zIndex: 1000 }}>
-        <div style={{ fontSize: '14px', marginBottom: '5px', fontWeight: 'bold' }}>System Status</div>
-        <div>Landing Lights: {landingLights ? 'ON' : 'OFF'}</div>
-        <div>Landing Lights Off Count: {landingLightsOffCount}</div>
-        <div>Descended Through 10k: {hasDescendedThrough10k ? 'YES' : 'NO'}</div>
-        <div>GSX Bypass Pin: {gsxBypassPin ? 'INSERTED' : 'REMOVED'}</div>
-        {touchdownData && (
-          <div style={{ marginTop: '10px', borderTop: '1px solid #444', paddingTop: '5px' }}>
-            <div style={{ fontSize: '12px', fontWeight: 'bold', marginBottom: '5px' }}>Touchdown Data:</div>
-            <div>Vertical Speed: {touchdownData.normalVelocity.toFixed(1)} ft/s</div>
-            <div>Bank Angle: {touchdownData.bankDegrees.toFixed(1)}°</div>
-            <div>Pitch Angle: {touchdownData.pitchDegrees.toFixed(1)}°</div>
-            <div>Heading: {touchdownData.headingDegrees.toFixed(1)}°</div>
-            <div>Lateral Speed: {touchdownData.lateralVelocity.toFixed(1)} ft/s</div>
-            <div>Longitudinal Speed: {touchdownData.longitudinalVelocity.toFixed(1)} ft/s</div>
+    <div className="min-h-screen bg-gray-900 text-white p-4">
+      <div className="max-w-7xl mx-auto">
+        <div className="flex flex-col lg:flex-row gap-6">
+          {/* Flight Status Panel */}
+          <div className="flex-1">
+            <FlightStatusPanel
+              flightState={flightState}
+              currentVolume={currentVolume}
+              masterVolume={masterVolume}
+              currentZone={currentZone}
+              isPlaying={isPlaying}
+              currentAudioName={currentAudioName}
+              currentAudioVolume={currentAudioVolume}
+              cockpitDoorOpen={cockpitDoorOpen}
+              cameraPosition={cameraPosition}
+              landingLights={landingLights}
+              landingLightsOffCount={landingLightsOffCount}
+              hasDescendedThrough10k={hasDescendedThrough10k}
+              gsxBypassPin={gsxBypassPin}
+              touchdownData={touchdownData}
+              onVolumeChange={handleVolumeChange}
+            />
           </div>
-        )}
-        
+
+          {/* Controls Panel */}
+          <div className="flex-1 bg-gray-800 rounded-lg shadow-lg p-6">
+            <MainPage onDisconnect={stopAllAudio} />
+            <AudioManager />
+          </div>
+        </div>
       </div>
-      <style>{`
-        .status-panel {
-          background-color: #2c3e50;
-          padding: 15px;
-          border-radius: 8px;
-          margin-bottom: 20px;
-        }
-        .status-item {
-          display: flex;
-          align-items: center;
-          margin-bottom: 10px;
-        }
-        .status-label {
-          color: #ecf0f1;
-          font-weight: bold;
-          margin-right: 10px;
-          min-width: 120px;
-        }
-        .status-value {
-          color: #3498db;
-        }
-        .volume-slider {
-          width: 150px;
-          margin: 0 10px;
-        }
-      `}</style>
-      <AudioManager />
     </div>
   );
 }
