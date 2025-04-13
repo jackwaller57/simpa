@@ -1613,12 +1613,9 @@ function App() {
       <MainPage onDisconnect={stopAllAudio} />
       <div style={{ position: 'fixed', bottom: 20, right: 20, backgroundColor: 'rgba(0,0,0,0.7)', padding: '10px', borderRadius: '5px', color: 'white', zIndex: 1000 }}>
         <div style={{ fontSize: '14px', marginBottom: '5px', fontWeight: 'bold' }}>System Status</div>
-        <div>Seatbelt: {seatbeltSign ? 'ON' : 'OFF'}</div>
-        <div>Beacon: {beaconLight ? 'ON' : 'OFF'}</div>
         <div>Landing Lights: {landingLights ? 'ON' : 'OFF'}</div>
         <div>Landing Lights Off Count: {landingLightsOffCount}</div>
         <div>Descended Through 10k: {hasDescendedThrough10k ? 'YES' : 'NO'}</div>
-        <div>Has Landed: {hasLanded ? 'YES' : 'NO'}</div>
         <div>GSX Bypass Pin: {gsxBypassPin ? 'INSERTED' : 'REMOVED'}</div>
         {touchdownData && (
           <div style={{ marginTop: '10px', borderTop: '1px solid #444', paddingTop: '5px' }}>
@@ -1631,10 +1628,7 @@ function App() {
             <div>Longitudinal Speed: {touchdownData.longitudinalVelocity.toFixed(1)} ft/s</div>
           </div>
         )}
-        <div>Position: {cameraPosition}</div>
-        <div style={{ color: cockpitDoorOpen ? '#4CAF50' : '#ff4444' }}>
-          Cockpit Door: {cockpitDoorOpen ? 'OPEN' : 'CLOSED'}
-        </div>
+        
       </div>
       <style>{`
         .status-panel {
