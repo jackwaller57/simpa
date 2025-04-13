@@ -50,6 +50,7 @@ struct FlightDataState {
     last_substate_update: std::time::Instant,
     last_jetway_update: std::time::Instant,  // Add this field
     gsx_bypass_pin: bool,  // Add GSX bypass pin state
+    seatbelt_sign: bool,  // Add seatbelt sign state
 }
 
 impl FlightDataState {
@@ -80,6 +81,7 @@ impl FlightDataState {
             last_substate_update: std::time::Instant::now(),
             last_jetway_update: std::time::Instant::now(),  // Initialize the new field
             gsx_bypass_pin: false,  // Initialize GSX bypass pin state
+            seatbelt_sign: false,  // Initialize seatbelt sign state
         }
     }
 
@@ -174,7 +176,8 @@ impl FlightDataState {
             "zPosition": self.z_position,
             "cameraViewType": self.camera_view_type,
             "volumeLevel": self.volume_level,
-            "gsxBypassPin": self.gsx_bypass_pin
+            "gsxBypassPin": self.gsx_bypass_pin,
+            "seatbeltSign": self.seatbelt_sign
         })
     }
 }
@@ -529,6 +532,12 @@ pub fn start_simconnect_data_collection(
         let mut prev_beacon_state = -1;
         let mut prev_seatbelt_state = -1;
         let mut prev_landing_lights_state = -1;  // Add this line
+        let mut last_seatbelt_event_time = std::time::Instant::now();
+        let seatbelt_debounce_ms = std::time::Duration::from_millis(3000); // 3 second debounce
+        
+        // Debug logging for initial state values
+        println!("[DEBUG] Initial state: prev_beacon_state={}, prev_seatbelt_state={}, prev_landing_lights_state={}", 
+            prev_beacon_state, prev_seatbelt_state, prev_landing_lights_state);
         
         while *arc_state.running.lock().unwrap() {
             match conn.get_next_message() {
@@ -581,11 +590,55 @@ pub fn start_simconnect_data_collection(
                                 let data_ptr = std::ptr::addr_of!(data.dwData) as *const i32;
                                 let seatbelt_state = *data_ptr;
                                 
-                                if seatbelt_state != prev_seatbelt_state {
+                                println!("[DEBUG] Seatbelt sign data received: current={}, previous={}", 
+                                    seatbelt_state, prev_seatbelt_state);
+                                
+                                // Initialize previous state if this is the first time
+                                if prev_seatbelt_state == -1 {
+                                    println!("[DEBUG] Initializing seatbelt sign state: {}", seatbelt_state);
                                     prev_seatbelt_state = seatbelt_state;
-                                    let _ = window.emit("seatbelt-switch-changed", json!({
-                                        "state": seatbelt_state == 1
-                                    }));
+                                    
+                                    // Update flight state silently (no event)
+                                    flight_state.seatbelt_sign = seatbelt_state == 1;
+                                    continue;
+                                }
+                                
+                                // Only send event if state actually changed from previous value
+                                if seatbelt_state != prev_seatbelt_state {
+                                    let now = std::time::Instant::now();
+                                    let time_since_last = now.duration_since(last_seatbelt_event_time);
+                                    
+                                    // Handle debouncing with longer grace period for OFF→ON transitions
+                                    let min_interval = if seatbelt_state == 1 && prev_seatbelt_state == 0 {
+                                        // Longer debounce when turning ON from OFF (genuine state change)
+                                        std::time::Duration::from_millis(500)
+                                    } else {
+                                        // Normal debounce for other state changes
+                                        std::time::Duration::from_millis(3000)
+                                    };
+                                    
+                                    if time_since_last >= min_interval {
+                                        println!("[DEBUG] Seatbelt sign state changed: {} -> {}, sending event", 
+                                            prev_seatbelt_state, seatbelt_state);
+                                        
+                                        // Set previous state before emitting event
+                                        prev_seatbelt_state = seatbelt_state;
+                                        last_seatbelt_event_time = now;
+                                        
+                                        // Emit event with boolean state (true=on, false=off)
+                                        let _ = window.emit("seatbelt-switch-changed", json!({
+                                            "state": seatbelt_state == 1
+                                        }));
+                                        
+                                        // Also update flight state
+                                        flight_state.seatbelt_sign = seatbelt_state == 1;
+                                        
+                                        // Always emit simconnect data event with updated state
+                                        let _ = window.emit("simconnect-data", flight_state.get_payload());
+                                    } else {
+                                        println!("[DEBUG] Ignoring seatbelt state change due to debounce. Time since last: {:?}ms", 
+                                            time_since_last.as_millis());
+                                    }
                                 }
                             },
                             3 => { // Jetway state data

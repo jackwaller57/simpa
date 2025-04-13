@@ -6,7 +6,7 @@ interface AudioManagerProps {
 }
 
 export function AudioManager({ 
-    beaconSoundUrl = '/sounds/announcements/Doors to Auto.wav'
+    beaconSoundUrl = '/sounds/announcements/Doors-to-Auto.wav'
 }: AudioManagerProps) {
     const beaconAudioRef = useRef<HTMLAudioElement | null>(null);
     const lastBeaconState = useRef<boolean>(false);

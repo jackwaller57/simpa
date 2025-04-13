@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { SimConnectControl } from '../components/SimConnectControl';
-import { AudioManager } from '../components/AudioManager';
 import { FlightDataDisplay } from '../components/FlightDataDisplay';
+import CameraPosition from '../components/CameraPosition';
+import ViewDisplay from '../components/ViewDisplay';
 import { ChartBarSquareIcon, SpeakerWaveIcon, CheckIcon } from '@heroicons/react/24/outline';
 
 interface MainPageProps {
@@ -81,7 +82,6 @@ export function MainPage({ onDisconnect }: MainPageProps) {
                                         </li>
                                     </ul>
                                 </div>
-                                <AudioManager />
                             </div>
                         </div>
                     )}
