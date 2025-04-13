@@ -26,6 +26,7 @@ interface FlightStatusPanelProps {
   landingLightsOffCount: number;
   hasDescendedThrough10k: boolean;
   gsxBypassPin: boolean;
+  seatbeltSignCount: number;
   touchdownData: {
     normalVelocity: number;
     bankDegrees: number;
@@ -35,6 +36,7 @@ interface FlightStatusPanelProps {
     longitudinalVelocity: number;
   } | null;
   onVolumeChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
+  onResetSeatbeltCount?: () => void;
 }
 
 const FlightStatusPanel: React.FC<FlightStatusPanelProps> = ({
@@ -51,8 +53,10 @@ const FlightStatusPanel: React.FC<FlightStatusPanelProps> = ({
   landingLightsOffCount,
   hasDescendedThrough10k,
   gsxBypassPin,
+  seatbeltSignCount,
   touchdownData,
-  onVolumeChange
+  onVolumeChange,
+  onResetSeatbeltCount
 }) => {
   return (
     <div className="bg-gray-800 rounded-lg p-4 shadow-lg">
@@ -159,6 +163,19 @@ const FlightStatusPanel: React.FC<FlightStatusPanelProps> = ({
             <span className={flightState.seatbeltSign ? 'text-green-400' : 'text-red-400'}>
               {flightState.seatbeltSign ? 'ON' : 'OFF'}
             </span>
+          </div>
+          <div className="flex items-center">
+            <span className="w-32 text-gray-400">Seatbelt Count:</span>
+            <span className="text-blue-400">{seatbeltSignCount}</span>
+            {onResetSeatbeltCount && (
+              <button 
+                onClick={onResetSeatbeltCount}
+                className="ml-2 bg-gray-600 hover:bg-gray-500 text-white text-xs py-1 px-2 rounded"
+                title="Reset seatbelt sign count"
+              >
+                Reset
+              </button>
+            )}
           </div>
           <div className="flex items-center">
             <span className="w-32 text-gray-400">Jetway:</span>
