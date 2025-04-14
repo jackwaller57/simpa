@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { invoke } from '@tauri-apps/api/tauri';
+import { invoke } from '@tauri-apps/api/core';
 import './App.css';
 import { MainPage } from './pages/MainPage';
 import FlightStatusPanel from './components/FlightStatusPanel';
 import CameraPosition from './components/CameraPosition';
 import ViewDisplay from './components/ViewDisplay';
+import { getZoneFromPosition, getVolumeForZone } from './zoneFix';
 
 interface FlightState {
   xPosition: number;
@@ -2283,6 +2284,67 @@ function App() {
     lastVolumeUpdateRef.current = now;
     lastCameraZRef.current = cameraZ;
   };
+
+  // Add direct zone control constants 
+  const DIRECT_MODE_ENABLED = true; // Enable direct mode for zone control
+  const MIN_VOLUME_UPDATE_INTERVAL = 250; // ms between volume updates
+  const lastDirectVolumeUpdateRef = useRef<number>(Date.now());
+  
+  // Force zone update (bypasses all existing logic)
+  function forceZoneUpdate(z: number) {
+    if (!DIRECT_MODE_ENABLED) return;
+    
+    // Add throttling to prevent too frequent updates
+    const now = Date.now();
+    const timeSinceLastUpdate = now - lastDirectVolumeUpdateRef.current;
+    
+    if (timeSinceLastUpdate < MIN_VOLUME_UPDATE_INTERVAL) {
+      // Only log occasionally to reduce console spam
+      if (Math.random() < 0.1) { // Log roughly 10% of skipped updates
+        console.log(`🔴 DIRECT: Skipping volume update, too soon (${timeSinceLastUpdate}ms < ${MIN_VOLUME_UPDATE_INTERVAL}ms)`);
+      }
+      return;
+    }
+    
+    // Skip volume updates during critical announcements
+    if (isPlayingCriticalAnnouncementRef.current) {
+      console.log(`🔴 DIRECT: Skipping volume update during critical announcement playback`);
+      return;
+    }
+    
+    const directZone = getCurrentZone(z);
+    const directVolume = getZoneVolume(directZone);
+    
+    // Update timestamp before processing to prevent race conditions
+    lastDirectVolumeUpdateRef.current = now;
+    
+    // Only log zone changes or significant updates
+    if (directZone !== currentZoneRef.current || now - lastVolumeUpdateRef.current > 2000) {
+      console.log(`🔴 DIRECT: z=${z.toFixed(2)} → zone=${directZone}, volume=${directVolume}`);
+    }
+    
+    // Force UI update only if zone changed to reduce React re-renders
+    if (directZone !== currentZoneRef.current) {
+      setCurrentZone(directZone);
+      setCurrentVolume(directVolume * 100);
+      
+      // Force ref update
+      currentZoneRef.current = directZone;
+    }
+    
+    lastVolumeUpdateRef.current = now;
+  }
+  
+  // Start critical announcement protection
+  const startCriticalAnnouncement = () => {
+    isPlayingCriticalAnnouncementRef.current = true;
+    return () => {
+      isPlayingCriticalAnnouncementRef.current = false;
+    };
+  };
+  
+  // Add ref for critical announcements
+  const isPlayingCriticalAnnouncementRef = useRef<boolean>(false);
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-4">
