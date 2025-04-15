@@ -156,20 +156,6 @@ function App() {
   const beaconLightSoundRef = useRef<HTMLAudioElement | null>(null);
   const isBeaconAudioPlayingRef = useRef<boolean>(false);
 
-  // Add position history and filtering parameters
-  const zPositionHistoryRef = useRef<number[]>([]);
-  const MAX_POSITION_HISTORY = 15; // Keep last 15 position readings for smoothing
-
-  // Camera position health check refs - disabled due to system freeze issues
-  /*
-  const cameraPositionHealthCheckRef = useRef<number | null>(null);
-  const lastCameraUpdateTimeRef = useRef<number>(Date.now());
-  const cameraUpdateCountRef = useRef<number>(0);
-  const maxPositionUpdateGapRef = useRef<number>(10000); // Max 10 seconds without updates
-  const recoveryAttemptsRef = useRef<number>(0);
-  const MAX_CAMERA_RECOVERY_ATTEMPTS = 3;
-  */
-
   // Function to smoothly transition volume
   const fadeVolume = (element: HTMLAudioElement, targetVolume: number) => {
     const startVolume = element.volume;
@@ -198,55 +184,99 @@ function App() {
     // Convert dB back to linear scale (0-1)
     return Math.pow(10, dB / 20);
   };
-  
-  // Track last volume update timestamp for throttling
-  const lastVolumeUpdateTimestampRef = useRef<number>(Date.now());
-  
-  // Simplified audio volume update function with throttling
-  const updateAudioVolume = (audioElement: HTMLAudioElement, targetVolume: number): boolean => {
-    // Skip update if element is invalid
-    if (!audioElement) {
-      return false;
+
+  // Function to determine current zone based on camera Z position
+  const getCurrentZone = (cameraZ: number): string => {
+    // Ensure we're using the actual camera Z position
+    const actualZ = cameraZ || lastCameraZRef.current || 0;
+    
+    // Get zone based on camera position 
+    let newZone = "";
+    // These values are based on camera position only
+    if (actualZ > -1.60) {
+      newZone = 'outside';
+    } else if (actualZ > -12.0) {
+      newZone = 'jetway';
+    } else if (actualZ > -22.4) {
+      newZone = 'cabin';
+    } else if (actualZ > -24.3) {
+      newZone = 'cockpit';
+    } else {
+      newZone = 'outside';
     }
     
-    // Skip update if audio element is not ready
-    if (audioElement.readyState < 2) {
-      return false;
-    }
-    
+    // Stability logic to prevent rapid zone changes
     const now = Date.now();
-    // Skip if we've updated too recently (throttle to max 4 updates per second)
-    if (now - lastVolumeUpdateTimestampRef.current < 250) {
-      return false;
+    const { lastZone, lastZoneZ, stableCounter, changeTime } = zoneStabilityRef.current;
+    
+    // If zone is different from last zone
+    if (newZone !== lastZone) {
+      // Check if the position change is significant enough to warrant a zone change
+      if (Math.abs(actualZ - lastZoneZ) < ZONE_CHANGE_THRESHOLD) {
+        // Too small a change, probably noise - keep the last zone
+        console.log(`Ignoring small zone change from ${lastZone} to ${newZone}. Z diff: ${Math.abs(actualZ - lastZoneZ)}`);
+        return lastZone;
+      }
+      
+      // Check if enough time has passed since the last zone change
+      if (now - changeTime < 500) { // Reduced from 3000ms to 500ms
+        // Too soon since last change, keep the last zone to prevent rapid toggling
+        console.log(`Ignoring rapid zone change from ${lastZone} to ${newZone}. Time since last change: ${now - changeTime}ms`);
+        return lastZone;
+      }
+      
+      // This looks like a legitimate zone change, update the ref
+      console.log(`Zone change from ${lastZone} to ${newZone} at Z: ${actualZ}`);
+      zoneStabilityRef.current = {
+        lastZone: newZone,
+        lastZoneZ: actualZ,
+        stableCounter: 0,
+        changeTime: now
+      };
+      
+      return newZone;
+    } else {
+      // Same zone as before, increment stability counter
+      zoneStabilityRef.current.stableCounter++;
+      
+      // Update the last Z position if we've been stable for a while
+      if (stableCounter > 5) { // Reduced from 10 to 5 for faster updates
+        zoneStabilityRef.current.lastZoneZ = actualZ;
+      }
+      
+      return lastZone;
     }
-    
-    // Update timestamp
-    lastVolumeUpdateTimestampRef.current = now;
-    
-    // Apply volume change directly
-    audioElement.volume = targetVolume;
-    return true;
+  };
+
+  // Function to get volume for zone
+  const getZoneVolume = (zone: string): number => {
+    console.log(`Getting volume for zone: ${zone}`);
+    switch (zone) {
+      case 'outside': return 0.45;    // 45%
+      case 'jetway': return 0.792;    // 79.2%
+      case 'cabin': return 0.693;     // 69.3%
+      case 'cockpit': return 0.65;    // 65%
+      default: return 0.693;          // 69.3%
+    }
   };
 
   // Function to update all audio volumes
   const updateAllAudioVolumes = () => {
     const now = Date.now();
-    console.log('[AUDIO DEBUG] Updating all audio volumes...');
-    
     if (now - lastVolumeUpdateRef.current < VOLUME_DEBOUNCE_TIME) {
-      console.log('[AUDIO DEBUG] Skipping volume update - too soon since last update');
+      console.log('Skipping volume update - too soon since last update');
       return; // Skip update if too soon
     }
     lastVolumeUpdateRef.current = now;
 
     // Get the current Z position, prioritizing the most recent value
     const currentZ = flightState.zPosition || lastCameraZRef.current || 0;
-    console.log('[AUDIO DEBUG] Current Z position for volume update:', currentZ);
+    console.log('Current Z position for volume update:', currentZ);
     
     // Only update if position has changed significantly
     if (lastZPositionRef.current !== null && 
         Math.abs(currentZ - lastZPositionRef.current) < POSITION_THRESHOLD) {
-      console.log('[AUDIO DEBUG] Skipping volume update - position change too small');
+      console.log('Skipping volume update - position change too small');
       return;
     }
     
@@ -255,7 +285,7 @@ function App() {
     const logVolume = toLogVolume(baseVolume * 100);
     const finalVolume = (masterVolume / 100) * logVolume;
 
-    console.log('[AUDIO DEBUG] Volume calculation:', {
+    console.log('Volume calculation:', {
       currentZ,
       zone,
       baseVolume,
@@ -264,42 +294,26 @@ function App() {
       masterVolume
     });
 
-    // Update all audio elements using our new audio volume function
-    const updateAudioRefs = [
-      { ref: boardingMusicRef, name: 'boarding music' },
-      { ref: welcomeAboardRef, name: 'welcome aboard' },
-      { ref: doorsAutoRef, name: 'doors auto' },
-      { ref: tenKFeetRef, name: '10k feet' },
-      { ref: arriveSoonRef, name: 'arrive soon' },
-      { ref: landingSoonRef, name: 'landing soon' },
-      { ref: weveArrivedRef, name: 'weve arrived' },
-      { ref: almostReadyRef, name: 'almost ready' },
-      { ref: seatsForDepartureRef, name: 'seats for departure' },
-      { ref: safetyVideoRef, name: 'safety video' },
-      { ref: fastenSeatbeltRef, name: 'fasten seatbelt' }
-    ];
-    
-    // Update each audio element
-    let updatedCount = 0;
-    for (const { ref, name } of updateAudioRefs) {
+    // Update all audio elements with smooth transition
+    const updateVolume = (ref: React.MutableRefObject<HTMLAudioElement | null>, name: string) => {
       if (ref.current) {
-        console.log(`[AUDIO DEBUG] Updating ${name} volume to ${finalVolume.toFixed(3)}`);
-        const updated = updateAudioVolume(ref.current, finalVolume);
-        if (updated) {
-          updatedCount++;
-        } else {
-          console.log(`[AUDIO DEBUG] Failed to update ${name} volume`);
-        }
-      } else {
-        console.log(`[AUDIO DEBUG] Audio element ${name} not found or not initialized`);
+        console.log(`Updating ${name} volume to:`, finalVolume);
+        fadeVolume(ref.current, finalVolume);
       }
-    }
-    
-    if (updatedCount > 0) {
-      console.log(`[AUDIO DEBUG] Updated ${updatedCount} audio elements to volume ${finalVolume.toFixed(3)}`);
-    } else {
-      console.warn('[AUDIO DEBUG] No audio elements were updated!');
-    }
+    };
+
+    // Update all audio elements including doors auto
+    updateVolume(boardingMusicRef, 'boarding music');
+    updateVolume(welcomeAboardRef, 'welcome aboard');
+    updateVolume(doorsAutoRef, 'doors auto');
+    updateVolume(tenKFeetRef, '10k feet');
+    updateVolume(arriveSoonRef, 'arrive soon');
+    updateVolume(landingSoonRef, 'landing soon');
+    updateVolume(weveArrivedRef, 'weve arrived');
+    updateVolume(almostReadyRef, 'almost ready');
+    updateVolume(seatsForDepartureRef, 'seats for departure');
+    updateVolume(safetyVideoRef, 'safety video');
+    updateVolume(fastenSeatbeltRef, 'fasten seatbelt');
 
     // Update volume indicator (show linear value for user)
     setCurrentVolume(baseVolume * 100);
@@ -411,11 +425,22 @@ function App() {
 
       if (data.type === 'safety_video') {
         if (safetyVideoRef.current) {
-          console.log('[VOLUME-CTRL] Starting safety video');
-          isAnnouncementPlayingRef.current = true;
+          console.log('Attempting to play safety video');
+          console.log('Safety video audio element state:', {
+            readyState: safetyVideoRef.current.readyState,
+            error: safetyVideoRef.current.error,
+            src: safetyVideoRef.current.src,
+            volume: safetyVideoRef.current.volume,
+            muted: safetyVideoRef.current.muted,
+            paused: safetyVideoRef.current.paused,
+            currentTime: safetyVideoRef.current.currentTime
+          });
           
-          // CRITICAL priority - force boarding music volume down
-          setBoardingMusicVolume(0.05, 'critical');
+          // Lower boarding music volume before playing safety video
+          if (boardingMusicRef.current) {
+            console.log('Lowering boarding music volume for safety video');
+            boardingMusicRef.current.volume = 0.2;
+          }
           
           // Set safety video volume based on current zone
           const currentZ = flightState.zPosition || lastCameraZRef.current || 0;
@@ -424,24 +449,21 @@ function App() {
           const logVolume = toLogVolume(baseVolume * 100);
           const positionVolume = (masterVolume / 100) * logVolume;
           
+          console.log('Volume calculation:', {
+            currentZ,
+            zone,
+            baseVolume,
+            logVolume,
+            positionVolume,
+            masterVolume
+          });
+          
           safetyVideoRef.current.volume = positionVolume;
           safetyVideoRef.current.currentTime = 0; // Reset to start
           
-          // Ensure boarding music volume stays low during safety video
-          const volumeKeeper = setInterval(() => {
-            if (isAnnouncementPlayingRef.current && boardingMusicRef.current) {
-              if (boardingMusicRef.current.volume > 0.05) {
-                console.log('[VOLUME-CTRL] Re-enforcing boarding music volume during safety video');
-                setBoardingMusicVolume(0.05, 'critical');
-              }
-            } else {
-              clearInterval(volumeKeeper);
-            }
-          }, 250);
-          
           try {
             await safetyVideoRef.current.play();
-            console.log('[VOLUME-CTRL] Successfully started safety video');
+            console.log('Successfully started playing safety video');
             setIsPlaying(true);
             setCurrentAudioName('safety_video');
             setCurrentAudioVolume(positionVolume * 100);
@@ -449,37 +471,29 @@ function App() {
             
             // Add event listener for when the audio ends
             safetyVideoRef.current.addEventListener('ended', () => {
-              console.log('[VOLUME-CTRL] Safety video finished');
-              isAnnouncementPlayingRef.current = false;
-              clearInterval(volumeKeeper);
-              
+              console.log('Safety video finished playing');
               setIsPlaying(false);
               setCurrentAudioName('');
               
               // Restore boarding music volume after safety video finishes
               if (boardingMusicRef.current) {
-                setTimeout(() => {
-                  console.log('[VOLUME-CTRL] Restoring boarding music after safety video');
-                  setBoardingMusicVolume(1.0, 'high');
-                }, 100);
+                console.log('Restoring boarding music volume');
+                boardingMusicRef.current.volume = 1.0;
               }
             }, { once: true });
           } catch (error) {
-            console.error('[VOLUME-CTRL] Error playing safety video:', error);
-            isAnnouncementPlayingRef.current = false;
-            clearInterval(volumeKeeper);
-            
+            console.error('Error playing safety video:', error);
             setIsPlaying(false);
             setCurrentAudioName('');
             
             // Restore boarding music volume on error
             if (boardingMusicRef.current) {
-              console.log('[VOLUME-CTRL] Restoring boarding music volume after error');
-              setBoardingMusicVolume(1.0, 'high');
+              console.log('Restoring boarding music volume after error');
+              boardingMusicRef.current.volume = 1.0;
             }
           }
         } else {
-          console.error('[VOLUME-CTRL] Safety video audio element not found');
+          console.error('Safety video audio element not found');
         }
       }
     } catch (error) {
@@ -545,7 +559,7 @@ function App() {
 
   // Function to stop all audio
   const stopAllAudio = () => {
-    console.log('[VOLUME DEBUG] Stopping all audio...');
+    console.log('Stopping all audio...');
     const audioRefs = [
       boardingMusicRef,
       welcomeAboardRef,
@@ -561,9 +575,6 @@ function App() {
 
     audioRefs.forEach(ref => {
       if (ref.current) {
-        if (ref === boardingMusicRef) {
-          console.log(`[VOLUME DEBUG] Stopping boarding music, volume was: ${ref.current.volume.toFixed(3)}`);
-        }
         ref.current.pause();
         ref.current.currentTime = 0;
       }
@@ -660,91 +671,83 @@ function App() {
 
   // Helper function to play announcement with proper volume
   const playAnnouncementWithVolume = (audioRef: React.MutableRefObject<HTMLAudioElement | null>, audioName: string, onEndCallback?: () => void) => {
-    if (audioRef.current) {
-      console.log(`[VOLUME-CTRL] Starting announcement: ${audioName}`);
-      isAnnouncementPlayingRef.current = true;
-      
-      // CRITICAL priority - force boarding music volume down
-      setBoardingMusicVolume(0.05, 'critical');
-      
-      // Prepare to play the announcement
-      const currentZ = flightState.zPosition || lastCameraZRef.current || 0;
-      const zone = getCurrentZone(currentZ);
-      const baseVolume = getZoneVolume(zone);
-      const logVolume = toLogVolume(baseVolume * 100);
-      const positionVolume = (masterVolume / 100) * logVolume;
-      
-      // Set announcement volume
-      audioRef.current.volume = positionVolume;
-      audioRef.current.currentTime = 0;
-      
-      // Ensure boarding music volume stays low during announcement
-      const volumeKeeper = setInterval(() => {
-        if (isAnnouncementPlayingRef.current && boardingMusicRef.current) {
-          if (boardingMusicRef.current.volume > 0.05) {
-            console.log(`[VOLUME-CTRL] Re-enforcing boarding music volume during announcement: ${audioName}`);
-            setBoardingMusicVolume(0.05, 'critical');
-          }
-        } else {
-          clearInterval(volumeKeeper);
-        }
-      }, 250);
-      
-      // Play the announcement
-      audioRef.current.play()
-        .then(() => {
-          setIsPlaying(true);
-          setCurrentAudioName(audioName);
-          setCurrentAudioVolume(positionVolume * 100);
-          setCurrentZone(zone);
-          
-          // Add event listener for when audio ends
-          audioRef.current?.addEventListener('ended', () => {
-            console.log(`[VOLUME-CTRL] Announcement ${audioName} finished, restoring boarding music`);
-            isAnnouncementPlayingRef.current = false;
-            clearInterval(volumeKeeper);
-            
-            setIsPlaying(false);
-            setCurrentAudioName('');
-            
-            // Restore boarding music volume after announcement ends
-            if (boardingMusicRef.current) {
-              setTimeout(() => {
-                console.log(`[VOLUME-CTRL] Restoring boarding music volume to full`);
-                setBoardingMusicVolume(1.0, 'high');
-              }, 100);
-            }
-            
-            // Call the onEnd callback if provided
-            if (onEndCallback) {
-              onEndCallback();
-            }
-          }, { once: true });
-        })
-        .catch(error => {
-          console.error(`Error playing ${audioName} announcement:`, error);
-          isAnnouncementPlayingRef.current = false;
-          clearInterval(volumeKeeper);
-          
+    if (!audioRef.current) {
+      console.error(`${audioName} audio element not found`);
+      if (onEndCallback) {
+        // Still call the callback so state flags are reset properly
+        onEndCallback();
+      }
+      return;
+    }
+    
+    console.log(`Playing announcement: ${audioName}`);
+    
+    // Get current zone and calculate proper volume
+    const currentZ = flightState.zPosition || lastCameraZRef.current || 0;
+    const zone = getCurrentZone(currentZ);
+    const baseVolume = getZoneVolume(zone);
+    const logVolume = toLogVolume(baseVolume * 100);
+    const positionVolume = (masterVolume / 100) * logVolume;
+    
+    console.log(`Audio ${audioName} volume calculation:`, {
+      zone,
+      baseVolume,
+      logVolume,
+      positionVolume,
+      masterVolume
+    });
+    
+    // Lower boarding music volume before playing announcement
+    if (boardingMusicRef.current) {
+      console.log(`Lowering boarding music volume for ${audioName} announcement`);
+      boardingMusicRef.current.volume = 0.05;
+    }
+    
+    // Set up audio for playback
+    audioRef.current.volume = positionVolume;
+    audioRef.current.currentTime = 0;
+    
+    // Attempt to play the audio
+    audioRef.current.play()
+      .then(() => {
+        console.log(`Successfully started playing "${audioName}" announcement`);
+        setIsPlaying(true);
+        setCurrentAudioName(audioName);
+        setCurrentAudioVolume(positionVolume * 100);
+        setCurrentZone(zone);
+        
+        // Add event listener for when the audio ends
+        audioRef.current?.addEventListener('ended', () => {
+          console.log(`"${audioName}" announcement finished playing`);
           setIsPlaying(false);
           setCurrentAudioName('');
           
-          // Restore boarding music volume on error
-          if (boardingMusicRef.current) {
-            console.log(`[VOLUME-CTRL] Restoring boarding music after error`);
-            setBoardingMusicVolume(1.0, 'high');
+          // Restore boarding music volume if needed
+          if (boardingMusicRef.current && jetwayAttachedRef.current) {
+            console.log(`Restoring boarding music volume after ${audioName} announcement`);
+            boardingMusicRef.current.volume = 1.0;
           }
           
           if (onEndCallback) {
             onEndCallback();
           }
-        });
-    } else {
-      console.error(`${audioName} audio element not found`);
-      if (onEndCallback) {
-        onEndCallback();
-      }
-    }
+        }, { once: true });
+      })
+      .catch(error => {
+        console.error(`Error playing "${audioName}" announcement:`, error);
+        setIsPlaying(false);
+        setCurrentAudioName('');
+        
+        // Restore boarding music volume on error
+        if (boardingMusicRef.current && jetwayAttachedRef.current) {
+          console.log(`Restoring boarding music volume after ${audioName} error`);
+          boardingMusicRef.current.volume = 1.0;
+        }
+        
+        if (onEndCallback) {
+          onEndCallback();
+        }
+      });
   };
 
   // Helper function to schedule welcome aboard announcements
@@ -953,16 +956,6 @@ function App() {
     seatbeltSignCountRef.current = 0;
     setSeatbeltSignCount(0);
     lastSeatbeltStateRef.current = false; // Reset the last state as well
-  };
-
-  // Function to handle volume changes from the FlightStatusPanel
-  const handleVolumeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const newVolume = parseInt(event.target.value, 10);
-    console.log(`Master volume changed to: ${newVolume}`);
-    setMasterVolume(newVolume);
-    
-    // Update all audio volumes with the new master volume
-    updateAllAudioVolumes();
   };
 
   // Function to handle beacon light state changes
@@ -1361,7 +1354,7 @@ function App() {
       
       // Handle camera position updates
       if (typeof data.zPosition === 'number' && !isNaN(data.zPosition)) {
-        // Update the flight state with new data
+        console.log('Camera Z position updated:', data.zPosition);
         setFlightState(prev => ({
           ...prev,
           xPosition: data.xPosition ?? prev.xPosition,
@@ -1377,52 +1370,484 @@ function App() {
           jetwayState: data.jetwayState ? 1 : 0
         }));
         
-        // Always update last known camera Z position
         lastCameraZRef.current = data.zPosition;
-        
-        // Simple throttling for volume updates based on position changes
-        const now = Date.now();
-        const timeSinceLastUpdate = now - lastUpdateTimeRef.current;
-        
-        // Apply simple throttling - process at most every 150ms
-        if (timeSinceLastUpdate > 150) {
-          console.log(`[POSITION] Processing position update at Z: ${data.zPosition.toFixed(2)}`);
-          lastUpdateTimeRef.current = now;
-          
-          // Simple direct zone detection
-          let newZone = "";
-          if (data.zPosition > -1.60) {
-            newZone = 'outside';
-          } else if (data.zPosition > -12.0) {
-            newZone = 'jetway';
-          } else if (data.zPosition > -22.4) {
-            newZone = 'cabin';
-          } else if (data.zPosition > -24.3) {
-            newZone = 'cockpit';
-          } else {
-            newZone = 'outside';
-          }
-          
-          // Update zone if it has changed
-          if (newZone !== currentZoneRef.current) {
-            console.log(`[ZONE] Changed from ${currentZoneRef.current || 'unknown'} to ${newZone}`);
-            currentZoneRef.current = newZone;
-            setCurrentZone(newZone);
-            updateAllAudioVolumes();
-          }
-          // Periodically update volumes even if zone hasn't changed (but less frequently)
-          else if (now - lastVolumeUpdateRef.current > 2000) { // Every 2 seconds at most
-            console.log('[ZONE] Periodic volume update');
-            updateAllAudioVolumes();
-          }
-        }
+        updateAllAudioVolumes();
       }
       
       // Handle jetway state changes
+      if (data.jetwayState === true || data.jetwayState === false) {
+        const wasAttached = jetwayAttachedRef.current;
+        const newJetwayState = data.jetwayState as boolean;
+        
+        if (wasAttached !== newJetwayState) {
+          setTimeout(() => {
+            if (jetwayAttachedRef.current !== newJetwayState) {
+              jetwayAttachedRef.current = newJetwayState;
+              handleJetwayStateChange(newJetwayState);
+            }
+          }, 500);
+        }
+      }
+      
+      // Update other states
+      if (typeof data.seatbeltSign === 'boolean') {
+        console.log('SIMCONNECT DEBUG - Received valid seatbelt sign state change:', data.seatbeltSign);
+        console.log('Current seatbelt sign state:', seatbeltSign);
+        console.log('Current seatbelt sign count:', seatbeltSignCountRef.current);
+        handleSeatbeltSignChange(data.seatbeltSign);
+      } else {
+        console.log('SIMCONNECT DEBUG - Seatbelt sign data is not a boolean:', data.seatbeltSign);
+      }
+      
+      if (typeof data.beaconLight === 'boolean') {
+        console.log('=== SimConnect Beacon Light State ===');
+        console.log('SimConnect: Received valid beacon light state change:', data.beaconLight ? 'ON' : 'OFF');
+        console.log('SimConnect: Current cached beacon light state:', lastBeaconLightStateRef.current ? 'ON' : 'OFF');
+        
+        // Process the state change through the dedicated handler
+        handleBeaconLightChange(data.beaconLight);
+        console.log('=== End SimConnect Beacon Light State ===');
+      } else {
+        console.log('SimConnect: Beacon light data not a boolean:', data.beaconLight);
+      }
+      
+      if (typeof data.gsxBypassPin === 'boolean') {
+        // Skip if we've already played the safety video for this flight
+        if (safetyVideoPlayedRef.current) {
+          console.log('Skipping GSX bypass pin update - safety video already played for this flight');
+          return;
+        }
+
+        const now = Date.now();
+        if (now - lastGsxBypassPinUpdateRef.current < GSX_BYPASS_PIN_DEBOUNCE_TIME) {
+          console.log('Skipping GSX bypass pin update - too soon since last update');
+          return;
+        }
+
+        console.log('GSX bypass pin state changed:', data.gsxBypassPin);
+        const oldState = gsxBypassPin;
+        setGsxBypassPin(data.gsxBypassPin);
+        lastGsxBypassPinUpdateRef.current = now;
+        
+        // If pin was just inserted, play safety video
+        if (data.gsxBypassPin && !oldState) {
+          console.log('GSX bypass pin inserted - preparing to play safety video');
+          
+          // Function to attempt playing the safety video
+          const playSafetyVideo = () => {
+            if (!safetyVideoRef.current) {
+              console.error('Safety video audio element not found');
+              return;
+            }
+
+            // Ensure audio is ready
+            if (safetyVideoRef.current.readyState < 2) {
+              console.log('Safety video audio not ready yet, waiting...');
+              setTimeout(playSafetyVideo, 1000); // Retry after 1 second
+              return;
+            }
+
+            // Stop any currently playing safety video
+            safetyVideoRef.current.pause();
+            safetyVideoRef.current.currentTime = 0;
+            
+            // Lower boarding music volume before playing safety video
+            if (boardingMusicRef.current) {
+              console.log('Lowering boarding music volume for safety video');
+              boardingMusicRef.current.volume = 0.2;
+            }
+            
+            // Set safety video volume based on current zone
+            const currentZ = flightState.zPosition || lastCameraZRef.current || 0;
+            const zone = getCurrentZone(currentZ);
+            const baseVolume = getZoneVolume(zone);
+            const logVolume = toLogVolume(baseVolume * 100);
+            const positionVolume = (masterVolume / 100) * logVolume;
+            
+            console.log('Volume calculation:', {
+              currentZ,
+              zone,
+              baseVolume,
+              logVolume,
+              positionVolume,
+              masterVolume
+            });
+            
+            safetyVideoRef.current.volume = positionVolume;
+            safetyVideoRef.current.currentTime = 0; // Reset to start
+            
+            safetyVideoRef.current.play()
+              .then(() => {
+                console.log('Successfully started playing safety video');
+                setIsPlaying(true);
+                setCurrentAudioName('safety_video');
+                setCurrentAudioVolume(positionVolume * 100);
+                setCurrentZone(zone);
+                safetyVideoPlayedRef.current = true; // Mark safety video as played
+                
+                // Add event listener for when the audio ends
+                safetyVideoRef.current?.addEventListener('ended', () => {
+                  console.log('Safety video finished playing');
+                  setIsPlaying(false);
+                  setCurrentAudioName('');
+                  
+                  // Restore boarding music volume after safety video finishes
+                  if (boardingMusicRef.current) {
+                    console.log('Restoring boarding music volume');
+                    boardingMusicRef.current.volume = 1.0;
+                  }
+                }, { once: true });
+              })
+              .catch(error => {
+                console.error('Error playing safety video:', error);
+                setIsPlaying(false);
+                setCurrentAudioName('');
+                
+                // Restore boarding music volume on error
+                if (boardingMusicRef.current) {
+                  console.log('Restoring boarding music volume after error');
+                  boardingMusicRef.current.volume = 1.0;
+                }
+              });
+          };
+
+          // Start the playback process with a small delay to ensure everything is ready
+          setTimeout(playSafetyVideo, 1000);
+        }
+      }
+
+      // Handle touchdown detection
+      if (typeof data.touchdownNormalVelocity === 'number' && data.touchdownNormalVelocity !== 0) {
+        const now = Date.now();
+        // Only trigger landing detection if it's been more than 5 seconds since last touchdown
+        if (now - lastTouchdownRef.current > 5000) {
+          const touchdownInfo = {
+            normalVelocity: data.touchdownNormalVelocity,
+            bankDegrees: data.touchdownBankDegrees || 0,
+            pitchDegrees: data.touchdownPitchDegrees || 0,
+            headingDegrees: data.touchdownHeadingDegrees || 0,
+            lateralVelocity: data.touchdownLateralVelocity || 0,
+            longitudinalVelocity: data.touchdownLongitudinalVelocity || 0
+          };
+          
+          console.log('Touchdown detected!', touchdownInfo);
+          setTouchdownData(touchdownInfo);
+          setHasLanded(true);
+          lastTouchdownRef.current = now;
+          
+          // If we've descended through 10k and landing lights are off, play "We've arrived"
+          if (hasDescendedThrough10k && landingLightsOffCount >= 2) {
+            console.log('Playing "We\'ve arrived" announcement after touchdown');
+            handleAudioEvent({ name: 'weve-arrived', action: 'play' });
+          }
+        }
+      }
     } catch (error) {
-      console.error('Error processing SimConnect data:', error);
+      console.error('Error processing simconnect data:', error);
     }
   });
+
+  // Listen for landing lights changes
+  const unlistenLandingLights = listen('landing-lights-changed', (event) => {
+    try {
+      if (!event || !event.payload) {
+        console.error('Invalid landing lights event:', event);
+        return;
+      }
+
+      const data = event.payload as { state: boolean };
+      console.log('Landing lights event received:', data);
+      handleLandingLightsChange(data.state);
+    } catch (error) {
+      console.error('Error processing landing lights change:', error);
+    }
+  });
+
+  // Listen for beacon light changes
+  const unlistenBeaconLight = listen('beacon-light-changed', (event) => {
+    try {
+      if (!event || !event.payload) {
+        console.error('Invalid beacon light event:', event);
+        return;
+      }
+
+      const data = event.payload as { state: boolean };
+      console.log('Beacon light event received:', data);
+      handleBeaconLightChange(data.state);
+      
+      // Also update the flight state
+      setFlightState(prev => ({
+        ...prev,
+        beaconLight: data.state
+      }));
+    } catch (error) {
+      console.error('Error processing beacon light change:', error);
+    }
+  });
+
+  // Listen for seatbelt sign changes
+  const unlistenSeatbeltSign = listen('seatbelt-switch-changed', (event) => {
+    try {
+      if (!event || !event.payload) {
+        console.error('Invalid seatbelt sign event:', event);
+        return;
+      }
+
+      const data = event.payload as { state: boolean, resetCount?: boolean };
+      console.log('Seatbelt sign event received:', data);
+      
+      // Reset the count if needed (e.g., during flight reset or new flight)
+      if (data.resetCount) {
+        console.log('Resetting seatbelt sign count to 0');
+        seatbeltSignCountRef.current = 0;
+        setSeatbeltSignCount(0);
+      }
+      
+      handleSeatbeltSignChange(data.state);
+      
+      // Also update the flight state
+      setFlightState(prev => ({
+        ...prev,
+        seatbeltSign: data.state
+      }));
+    } catch (error) {
+      console.error('Error processing seatbelt sign change:', error);
+    }
+  });
+
+  // Helper function to handle jetway state changes
+  const handleJetwayStateChange = (newJetwayState: boolean) => {
+    if (newJetwayState) {
+      // Jetway attached - start boarding sequence
+      console.log('Jetway attached - starting boarding sequence');
+      
+      // Stop any existing audio and clear any existing timers
+      if (welcomeAboardTimerRef.current) {
+        console.log('Clearing existing welcome aboard timer');
+        clearInterval(welcomeAboardTimerRef.current);
+        welcomeAboardTimerRef.current = null;
+      }
+      
+      [boardingMusicRef, welcomeAboardRef, doorsAutoRef].forEach(ref => {
+        if (ref.current) {
+          ref.current.pause();
+          ref.current.currentTime = 0;
+        }
+      });
+      
+      // Start boarding music
+      if (boardingMusicRef.current) {
+        boardingMusicRef.current.volume = 1.0;
+        boardingMusicRef.current.play().catch(error => {
+          console.error('Error playing boarding music:', error);
+        });
+      }
+
+      // Play first welcome aboard after a delay
+      setTimeout(() => {
+        if (welcomeAboardRef.current && jetwayAttachedRef.current) {
+          console.log('Playing first welcome aboard announcement');
+          // Ensure audio is ready before playing
+          if (welcomeAboardRef.current.readyState >= 2) {
+            if (boardingMusicRef.current) {
+              boardingMusicRef.current.volume = 0.05;
+            }
+            welcomeAboardRef.current.currentTime = 0;
+            welcomeAboardRef.current.play()
+              .then(() => {
+                console.log('Successfully started playing first welcome aboard announcement');
+                // Add event listener for when the audio ends
+                welcomeAboardRef.current?.addEventListener('ended', () => {
+                  console.log('First welcome aboard announcement finished playing');
+                  // Restore boarding music volume after welcome aboard finishes
+                  if (boardingMusicRef.current) {
+                    boardingMusicRef.current.volume = 1.0;
+                  }
+                  
+                  // Schedule next announcement only if the "Almost ready" is not playing
+                  if (!isAlmostReadyPlayingRef.current) {
+                    const nextInterval = Math.floor(Math.random() * (140000 - 30000) + 30000);
+                    console.log(`Scheduling next welcome aboard announcement in ${nextInterval/1000} seconds`);
+                    welcomeAboardTimerRef.current = window.setTimeout(() => {
+                      if (welcomeAboardRef.current && jetwayAttachedRef.current) {
+                        console.log('Playing welcome aboard announcement after "Almost ready" finished');
+                        if (boardingMusicRef.current) {
+                          boardingMusicRef.current.volume = 0.05;
+                        }
+                        welcomeAboardRef.current.currentTime = 0;
+                        welcomeAboardRef.current.play()
+                          .then(() => {
+                            console.log('Successfully started playing welcome aboard announcement');
+                            welcomeAboardRef.current?.addEventListener('ended', () => {
+                              console.log('Welcome aboard announcement finished playing');
+                              if (boardingMusicRef.current) {
+                                boardingMusicRef.current.volume = 1.0;
+                              }
+                              
+                              // Schedule next announcement only if the "Almost ready" is not playing
+                              if (!isAlmostReadyPlayingRef.current) {
+                                const nextInterval = Math.floor(Math.random() * (140000 - 30000) + 30000);
+                                console.log(`Scheduling next welcome aboard announcement in ${nextInterval/1000} seconds`);
+                                welcomeAboardTimerRef.current = window.setTimeout(() => {
+                                  if (welcomeAboardRef.current && jetwayAttachedRef.current && !isAlmostReadyPlayingRef.current) {
+                                    console.log('Playing subsequent welcome aboard announcement');
+                                    if (boardingMusicRef.current) {
+                                      boardingMusicRef.current.volume = 0.05;
+                                    }
+                                    welcomeAboardRef.current.currentTime = 0;
+                                    welcomeAboardRef.current.play()
+                                      .then(() => {
+                                        console.log('Successfully started playing subsequent welcome aboard announcement');
+                                        welcomeAboardRef.current?.addEventListener('ended', () => {
+                                          console.log('Subsequent welcome aboard announcement finished playing');
+                                          if (boardingMusicRef.current) {
+                                            boardingMusicRef.current.volume = 1.0;
+                                          }
+                                        }, { once: true });
+                                      })
+                                      .catch(error => {
+                                        console.error('Error playing subsequent welcome aboard:', error);
+                                      });
+                                  }
+                                }, nextInterval);
+                              }
+                            }, { once: true });
+                          })
+                          .catch(error => {
+                            console.error('Error playing welcome aboard:', error);
+                          });
+                      }
+                    }, nextInterval);
+                  }
+                }, { once: true });
+              })
+              .catch(error => {
+                console.error('Error playing first welcome aboard:', error);
+              });
+          } else {
+            console.log('Welcome aboard audio not ready yet. ReadyState:', welcomeAboardRef.current.readyState);
+            // Wait for audio to be ready
+            welcomeAboardRef.current.addEventListener('canplaythrough', () => {
+              console.log('Welcome aboard audio is now ready to play');
+              if (boardingMusicRef.current) {
+                boardingMusicRef.current.volume = 0.05;
+              }
+              welcomeAboardRef.current?.play()
+                .then(() => {
+                  console.log('Successfully started playing first welcome aboard announcement after waiting');
+                  // Add event listener for when the audio ends
+                  welcomeAboardRef.current?.addEventListener('ended', () => {
+                    console.log('First welcome aboard announcement finished playing');
+                    // Restore boarding music volume after welcome aboard finishes
+                    if (boardingMusicRef.current) {
+                      boardingMusicRef.current.volume = 1.0;
+                    }
+                    
+                    // Schedule next announcement only if the "Almost ready" is not playing
+                    if (!isAlmostReadyPlayingRef.current) {
+                      const nextInterval = Math.floor(Math.random() * (140000 - 30000) + 30000);
+                      console.log(`Scheduling next welcome aboard announcement in ${nextInterval/1000} seconds`);
+                      welcomeAboardTimerRef.current = window.setTimeout(() => {
+                        if (welcomeAboardRef.current && jetwayAttachedRef.current && !isAlmostReadyPlayingRef.current) {
+                          console.log('Playing welcome aboard announcement after "Almost ready" finished');
+                          if (boardingMusicRef.current) {
+                            boardingMusicRef.current.volume = 0.05;
+                          }
+                          welcomeAboardRef.current.currentTime = 0;
+                          welcomeAboardRef.current.play()
+                            .then(() => {
+                              console.log('Successfully started playing welcome aboard announcement');
+                              welcomeAboardRef.current?.addEventListener('ended', () => {
+                                console.log('Welcome aboard announcement finished playing');
+                                if (boardingMusicRef.current) {
+                                  boardingMusicRef.current.volume = 1.0;
+                                }
+                                
+                                // Schedule next announcement only if the "Almost ready" is not playing
+                                if (!isAlmostReadyPlayingRef.current) {
+                                  const nextInterval = Math.floor(Math.random() * (140000 - 30000) + 30000);
+                                  console.log(`Scheduling next welcome aboard announcement in ${nextInterval/1000} seconds`);
+                                  welcomeAboardTimerRef.current = window.setTimeout(() => {
+                                    if (welcomeAboardRef.current && jetwayAttachedRef.current && !isAlmostReadyPlayingRef.current) {
+                                      console.log('Playing subsequent welcome aboard announcement');
+                                      if (boardingMusicRef.current) {
+                                        boardingMusicRef.current.volume = 0.05;
+                                      }
+                                      welcomeAboardRef.current.currentTime = 0;
+                                      welcomeAboardRef.current.play()
+                                        .then(() => {
+                                          console.log('Successfully started playing subsequent welcome aboard announcement');
+                                          welcomeAboardRef.current?.addEventListener('ended', () => {
+                                            console.log('Subsequent welcome aboard announcement finished playing');
+                                            if (boardingMusicRef.current) {
+                                              boardingMusicRef.current.volume = 1.0;
+                                            }
+                                          }, { once: true });
+                                        })
+                                        .catch(error => {
+                                          console.error('Error playing subsequent welcome aboard:', error);
+                                        });
+                                    }
+                                  }, nextInterval);
+                                }
+                              }, { once: true });
+                            })
+                            .catch(error => {
+                              console.error('Error playing welcome aboard:', error);
+                            });
+                        }
+                      }, nextInterval);
+                    }
+                  }, { once: true });
+                })
+                .catch(error => {
+                  console.error('Error playing first welcome aboard after waiting:', error);
+                });
+            }, { once: true });
+          }
+        }
+      }, 10000);
+    } else {
+      // Jetway detached - stop all audio and play doors auto
+      console.log('Jetway detached - stopping welcome aboard announcements');
+      if (welcomeAboardTimerRef.current) {
+        console.log('Clearing welcome aboard announcement timer');
+        clearTimeout(welcomeAboardTimerRef.current);
+        welcomeAboardTimerRef.current = null;
+      }
+      
+      [boardingMusicRef, welcomeAboardRef].forEach(ref => {
+        if (ref.current) {
+          ref.current.pause();
+          ref.current.currentTime = 0;
+        }
+      });
+      
+      // Clear any pending timeouts
+      const timeouts = window.setTimeout(() => {}, 0);
+      while (timeouts > 0) {
+        window.clearTimeout(timeouts);
+      }
+      
+      // Play doors auto after delay
+      setTimeout(() => {
+        if (doorsAutoRef.current) {
+          console.log('Playing doors auto announcement');
+          doorsAutoRef.current.currentTime = 0;
+          doorsAutoRef.current.play().catch(error => {
+            console.error('Error playing doors auto:', error);
+          });
+        }
+      }, 15000);
+    }
+  };
+
+  // Add function to handle volume changes
+  const handleVolumeChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const newVolume = parseInt(event.target.value);
+    setMasterVolume(newVolume);
+    updateAllAudioVolumes();
+  };
 
   // Add altitude change logging
   useEffect(() => {
@@ -1430,62 +1855,6 @@ function App() {
       console.log('Altitude changed:', flightState.altitude, 'feet');
     }
   }, [flightState.altitude]);
-  
-  // Add a zone detection health check system
-  useEffect(() => {
-    console.log('[HEALTH] Zone health check system initialized');
-    
-    // Set up periodic health check
-    const healthCheckInterval = setInterval(() => {
-      const now = Date.now();
-      const timeSinceLastUpdate = now - lastUpdateTimeRef.current;
-      
-      // Log health status periodically (approximately once per minute)
-      if (now % 60000 < 5000) {
-        console.log(`[HEALTH] Zone system status: Last update ${(timeSinceLastUpdate/1000).toFixed(1)}s ago`);
-      }
-      
-      // Check if system is unhealthy (no updates for 10 seconds)
-      if (timeSinceLastUpdate > 10000) {
-        console.warn(`⚠️ Zone system unhealthy: No updates for ${(timeSinceLastUpdate/1000).toFixed(1)}s`);
-        
-        // Use last known position to force an update if we have one
-        if (lastCameraZRef.current !== null) {
-          console.log(`[HEALTH] Forcing zone update with last height: ${lastCameraZRef.current}m`);
-          
-          // Determine zone based on Z position directly
-          let recoveryZone = "";
-          if (lastCameraZRef.current > -1.60) {
-            recoveryZone = 'outside';
-          } else if (lastCameraZRef.current > -12.0) {
-            recoveryZone = 'jetway';
-          } else if (lastCameraZRef.current > -22.4) {
-            recoveryZone = 'cabin';
-          } else if (lastCameraZRef.current > -24.3) {
-            recoveryZone = 'cockpit';
-          } else {
-            recoveryZone = 'outside';
-          }
-          
-          // Update if different from current zone
-          if (recoveryZone !== currentZoneRef.current) {
-            console.log(`[HEALTH] Recovered zone from ${currentZoneRef.current || 'unknown'} to ${recoveryZone}`);
-            currentZoneRef.current = recoveryZone;
-            setCurrentZone(recoveryZone);
-            updateAllAudioVolumes();
-            
-            // Reset the last update time to avoid constant recoveries
-            lastUpdateTimeRef.current = now;
-          }
-        }
-      }
-    }, 5000); // Check every 5 seconds
-    
-    // Clean up interval on component unmount
-    return () => {
-      clearInterval(healthCheckInterval);
-    };
-  }, []);
 
   // Initialize audio elements
   useEffect(() => {
@@ -1497,56 +1866,24 @@ function App() {
       
       const initAudio = (ref: React.MutableRefObject<HTMLAudioElement | null>, src: string, id: string, loop: boolean = false) => {
         if (ref.current) {
-          console.log(`[AUDIO INIT] Audio element ${id} already initialized`);
+          console.log(`Audio element ${id} already initialized`);
           return;
         }
 
-        console.log(`[AUDIO INIT] Initializing audio: ${src}`);
-        
-        // Verify file path exists by creating a temporary fetch request
-        fetch(src)
-          .then(response => {
-            if (response.ok) {
-              console.log(`[AUDIO INIT] File exists at ${src}`);
-            } else {
-              console.error(`[AUDIO INIT] Error verifying audio file at ${src}: ${response.status} ${response.statusText}`);
-            }
-          })
-          .catch(error => {
-            console.error(`[AUDIO INIT] Error checking audio file existence at ${src}:`, error);
-          });
-          
+        console.log(`Initializing audio: ${src}`);
         ref.current = new Audio();
         ref.current.src = src;
         ref.current.preload = 'auto';
         ref.current.id = id;
-        
-        if (loop) {
-          ref.current.loop = true;
-          if (id === 'boarding_music') {
-            console.log('[AUDIO INIT] Setting initial boarding music volume to 1.0');
-            ref.current.volume = 1.0;
-          }
-        }
-        
-        // Special volume debug logging for boarding music
-        if (id === 'boarding_music') {
-          ref.current.addEventListener('play', () => {
-            console.log(`[AUDIO INIT] Boarding music started playing with volume: ${ref.current?.volume.toFixed(3)}`);
-          });
-          
-          ref.current.addEventListener('volumechange', () => {
-            console.log(`[AUDIO INIT] Boarding music volume changed to: ${ref.current?.volume.toFixed(3)}`);
-          });
-        }
+        if (loop) ref.current.loop = true;
         
         // Add error handling with retry logic
         const handleError = (error: any) => {
-          console.error(`[AUDIO INIT] Error loading audio file ${src}:`, error);
+          console.error(`Error loading audio file ${src}:`, error);
           // Try to load the file again after a short delay
           setTimeout(() => {
             if (ref.current) {
-              console.log(`[AUDIO INIT] Retrying to load audio file: ${src}`);
+              console.log(`Retrying to load audio file: ${src}`);
               ref.current.load();
             }
           }, 1000);
@@ -1556,25 +1893,19 @@ function App() {
         
         // Add load event listener
         ref.current.addEventListener('loadeddata', () => {
-          console.log(`[AUDIO INIT] Audio file loaded: ${src}, readyState: ${ref.current?.readyState}`);
-          if (id === 'boarding_music') {
-            console.log(`[AUDIO INIT] Boarding music loaded with initial volume: ${ref.current?.volume.toFixed(3)}`);
-          }
+          console.log(`Audio file loaded: ${src}, readyState: ${ref.current?.readyState}`);
         });
 
         // Add error event listener
-        ref.current.addEventListener('error', (e) => {
-          console.error(`[AUDIO INIT] Error event for ${src}:`, e);
-          handleError(e);
-        });
+        ref.current.addEventListener('error', handleError);
 
         // Add abort event listener
         ref.current.addEventListener('abort', () => {
-          console.log(`[AUDIO INIT] Loading of audio file ${src} was aborted`);
+          console.log(`Loading of audio file ${src} was aborted`);
           // Try to load the file again after a short delay
           setTimeout(() => {
             if (ref.current) {
-              console.log(`[AUDIO INIT] Retrying to load audio file: ${src}`);
+              console.log(`Retrying to load audio file: ${src}`);
               ref.current.load();
             }
           }, 1000);
@@ -1582,67 +1913,58 @@ function App() {
 
         // Add canplaythrough event listener
         ref.current.addEventListener('canplaythrough', () => {
-          console.log(`[AUDIO INIT] Successfully loaded audio file: ${src}`);
+          console.log(`Successfully loaded audio file: ${src}`);
         });
       };
 
-      // Using a try/catch block to catch any initialization errors
-      try {
-        console.log('[AUDIO INIT] Starting audio element initialization');
-        
-        // Initialize boarding music first with special handling
-        initAudio(boardingMusicRef, './sounds/announcements/Boarding-Music.mp3', 'boarding_music', true);
-        
-        // Initialize other audio elements
-        initAudio(welcomeAboardRef, './sounds/announcements/Welcome Aboard.wav', 'welcome_aboard');
-        initAudio(doorsAutoRef, './sounds/announcements/Doors-to-Auto.wav', 'doors_auto');
-        initAudio(tenKFeetRef, './sounds/announcements/10k-feet.wav', '10k_feet');
-        initAudio(arriveSoonRef, './sounds/announcements/Arrive-soon.wav', 'arrive_soon');
-        initAudio(landingSoonRef, './sounds/announcements/landing-soon.wav', 'landing_soon');
-        initAudio(weveArrivedRef, './sounds/announcements/We\'ve-arrvied.wav', 'weve_arrived');
-        initAudio(almostReadyRef, './sounds/announcements/Almost-ready-to-go.wav', 'almost_ready');
-        initAudio(seatsForDepartureRef, './sounds/announcements/Seats-For-Departure.wav', 'seats_for_departure');
-        initAudio(safetyVideoRef, './sounds/announcements/A319-Safety-Video.mp3', 'safety_video');
-        initAudio(fastenSeatbeltRef, './sounds/announcements/fasten-seatbelt.mp3', 'fasten_seatbelt');
-        
-        // Add a check to verify all audio elements are loaded
-        const checkAudioElements = () => {
-          const audioRefs = [
-            { ref: boardingMusicRef, name: 'boarding music' },
-            { ref: welcomeAboardRef, name: 'welcome aboard' },
-            { ref: doorsAutoRef, name: 'doors auto' },
-            { ref: tenKFeetRef, name: '10k feet' },
-            { ref: arriveSoonRef, name: 'arrive soon' },
-            { ref: landingSoonRef, name: 'landing soon' },
-            { ref: weveArrivedRef, name: 'weve arrived' },
-            { ref: almostReadyRef, name: 'almost ready' },
-            { ref: seatsForDepartureRef, name: 'seats for departure' },
-            { ref: safetyVideoRef, name: 'safety video' },
-            { ref: fastenSeatbeltRef, name: 'fasten seatbelt' }
-          ];
+      // Initialize all audio elements with proper paths
+      initAudio(boardingMusicRef, '/sounds/announcements/Boarding-Music.mp3', 'boarding_music', true);
+      initAudio(welcomeAboardRef, '/sounds/announcements/Welcome Aboard.wav', 'welcome_aboard');
+      initAudio(doorsAutoRef, '/sounds/announcements/Doors-to-Auto.wav', 'doors_auto');
+      initAudio(tenKFeetRef, '/sounds/announcements/10k-feet.wav', '10k_feet');
+      initAudio(arriveSoonRef, '/sounds/announcements/Arrive-soon.wav', 'arrive_soon');
+      initAudio(landingSoonRef, '/sounds/announcements/landing-soon.wav', 'landing_soon');
+      initAudio(weveArrivedRef, '/sounds/announcements/We\'ve-arrvied.wav', 'weve_arrived');
+      initAudio(almostReadyRef, '/sounds/announcements/Almost-ready-to-go.wav', 'almost_ready');
+      initAudio(seatsForDepartureRef, '/sounds/announcements/Seats-For-Departure.wav', 'seats_for_departure');
+      initAudio(safetyVideoRef, '/sounds/announcements/A319-Safety-Video.mp3', 'safety_video');
+      initAudio(fastenSeatbeltRef, '/sounds/announcements/fasten-seatbelt.mp3', 'fasten_seatbelt');
 
-          audioRefs.forEach(({ ref, name }) => {
-            if (ref.current) {
-              console.log(`[AUDIO INIT] ${name} audio element:`, {
-                readyState: ref.current.readyState,
-                error: ref.current.error,
-                src: ref.current.src,
-                volume: ref.current.volume,
-                muted: ref.current.muted,
-                paused: ref.current.paused,
-                currentTime: ref.current.currentTime
-              });
-            } else {
-              console.error(`[AUDIO INIT] ${name} audio element not initialized`);
-            }
-          });
-        };
+      // Add a check to verify all audio elements are loaded
+      const checkAudioElements = () => {
+        const audioRefs = [
+          { ref: boardingMusicRef, name: 'boarding music' },
+          { ref: welcomeAboardRef, name: 'welcome aboard' },
+          { ref: doorsAutoRef, name: 'doors auto' },
+          { ref: tenKFeetRef, name: '10k feet' },
+          { ref: arriveSoonRef, name: 'arrive soon' },
+          { ref: landingSoonRef, name: 'landing soon' },
+          { ref: weveArrivedRef, name: 'weve arrived' },
+          { ref: almostReadyRef, name: 'almost ready' },
+          { ref: seatsForDepartureRef, name: 'seats for departure' },
+          { ref: safetyVideoRef, name: 'safety video' },
+          { ref: fastenSeatbeltRef, name: 'fasten seatbelt' }
+        ];
 
-        // Check audio elements after a short delay to allow for loading
-        setTimeout(checkAudioElements, 2000);
-      } catch (error) {
-        console.error('[AUDIO INIT] Error during audio initialization:', error);
-      }
+        audioRefs.forEach(({ ref, name }) => {
+          if (ref.current) {
+            console.log(`${name} audio element:`, {
+              readyState: ref.current.readyState,
+              error: ref.current.error,
+              src: ref.current.src,
+              volume: ref.current.volume,
+              muted: ref.current.muted,
+              paused: ref.current.paused,
+              currentTime: ref.current.currentTime
+            });
+          } else {
+            console.error(`${name} audio element not initialized`);
+          }
+        });
+      };
+
+      // Check audio elements after a short delay to allow for loading
+      setTimeout(checkAudioElements, 2000);
     };
 
     // Set a 3-second delay before starting audio initialization
@@ -1677,10 +1999,10 @@ function App() {
   // Cleanup listeners
   useEffect(() => {
     return () => {
-      // Clean up SimConnect listener
-      if (unlistenSimconnect) {
-        unlistenSimconnect.then(fn => fn()).catch(err => console.error('Error cleaning up listener:', err));
-      }
+      unlistenSimconnect.then(fn => fn());
+      unlistenLandingLights.then(fn => fn());
+      unlistenBeaconLight.then(fn => fn());
+      unlistenSeatbeltSign.then(fn => fn());
     };
   }, []);
 
@@ -1913,7 +2235,7 @@ function App() {
     
     // Always update the UI zone immediately regardless of debounce
     if (zone !== currentZoneRef.current) {
-      console.log(`[VOLUME DEBUG] Zone changed from ${currentZoneRef.current} to ${zone} - updating UI immediately`);
+      console.log(`Zone changed from ${currentZoneRef.current} to ${zone} - updating UI immediately`);
       setCurrentZone(zone);
       currentZoneRef.current = zone;
     }
@@ -1924,7 +2246,7 @@ function App() {
       return;
     }
     
-    console.log(`[VOLUME DEBUG] Updating volume for zone: ${zone}, base volume: ${baseVolume}, master volume: ${masterVolume}`);
+    console.log(`Updating volume for zone: ${zone}, base volume: ${baseVolume}, master volume: ${masterVolume}`);
     
     // Update all audio elements with the appropriate volume
     const updateVolume = (ref: React.MutableRefObject<HTMLAudioElement | null>, name: string) => {
@@ -1936,23 +2258,14 @@ function App() {
         
         // Only update if the volume has actually changed
         if (ref.current.volume !== finalVolume) {
-          if (name === 'boarding music') {
-            console.log(`[VOLUME DEBUG] Setting ${name} volume to ${finalVolume.toFixed(3)} (base: ${baseVolume}, log: ${logVolume}, master: ${masterVolume})`);
-          }
+          console.log(`Setting ${name} volume to ${finalVolume} (base: ${baseVolume}, log: ${logVolume})`);
           ref.current.volume = finalVolume;
         }
       }
     };
     
-    // Update boarding music with special logging
-    if (boardingMusicRef.current) {
-      // Get current value before update
-      const oldVolume = boardingMusicRef.current.volume;
-      updateVolume(boardingMusicRef, 'boarding music');
-      console.log(`[VOLUME DEBUG] Boarding music volume adjusted from ${oldVolume.toFixed(3)} to ${boardingMusicRef.current.volume.toFixed(3)} based on zone ${zone}`);
-    }
-    
-    // Update all other audio elements
+    // Update all audio elements
+    if (boardingMusicRef.current) updateVolume(boardingMusicRef, 'boarding music');
     updateVolume(welcomeAboardRef, 'welcome aboard');
     updateVolume(doorsAutoRef, 'doors auto');
     updateVolume(tenKFeetRef, '10k feet');
@@ -1977,6 +2290,51 @@ function App() {
   const MIN_VOLUME_UPDATE_INTERVAL = 250; // ms between volume updates
   const lastDirectVolumeUpdateRef = useRef<number>(Date.now());
   
+  // Force zone update (bypasses all existing logic)
+  function forceZoneUpdate(z: number) {
+    if (!DIRECT_MODE_ENABLED) return;
+    
+    // Add throttling to prevent too frequent updates
+    const now = Date.now();
+    const timeSinceLastUpdate = now - lastDirectVolumeUpdateRef.current;
+    
+    if (timeSinceLastUpdate < MIN_VOLUME_UPDATE_INTERVAL) {
+      // Only log occasionally to reduce console spam
+      if (Math.random() < 0.1) { // Log roughly 10% of skipped updates
+        console.log(`🔴 DIRECT: Skipping volume update, too soon (${timeSinceLastUpdate}ms < ${MIN_VOLUME_UPDATE_INTERVAL}ms)`);
+      }
+      return;
+    }
+    
+    // Skip volume updates during critical announcements
+    if (isPlayingCriticalAnnouncementRef.current) {
+      console.log(`🔴 DIRECT: Skipping volume update during critical announcement playback`);
+      return;
+    }
+    
+    const directZone = getCurrentZone(z);
+    const directVolume = getZoneVolume(directZone);
+    
+    // Update timestamp before processing to prevent race conditions
+    lastDirectVolumeUpdateRef.current = now;
+    
+    // Only log zone changes or significant updates
+    if (directZone !== currentZoneRef.current || now - lastVolumeUpdateRef.current > 2000) {
+      console.log(`🔴 DIRECT: z=${z.toFixed(2)} → zone=${directZone}, volume=${directVolume}`);
+    }
+    
+    // Force UI update only if zone changed to reduce React re-renders
+    if (directZone !== currentZoneRef.current) {
+      setCurrentZone(directZone);
+      setCurrentVolume(directVolume * 100);
+      
+      // Force ref update
+      currentZoneRef.current = directZone;
+    }
+    
+    lastVolumeUpdateRef.current = now;
+  }
+  
   // Start critical announcement protection
   const startCriticalAnnouncement = () => {
     isPlayingCriticalAnnouncementRef.current = true;
@@ -1987,347 +2345,6 @@ function App() {
   
   // Add ref for critical announcements
   const isPlayingCriticalAnnouncementRef = useRef<boolean>(false);
-
-  // Comment out the camera position health check system that's causing freezes
-  /*
-  useEffect(() => {
-    // Reset health monitoring on component mount
-    lastCameraUpdateTimeRef.current = Date.now();
-    cameraUpdateCountRef.current = 0;
-    recoveryAttemptsRef.current = 0;
-    
-    // Create an enhanced version of the camera position handler that tracks health metrics
-    const enhancedCameraPositionHandler = (event: any) => {
-      try {
-        // Record health monitoring metrics
-        lastCameraUpdateTimeRef.current = Date.now();
-        cameraUpdateCountRef.current++;
-        
-        // Process the camera position data as normal
-        if (event && event.data) {
-          const data = event.data;
-          if (typeof data.z === 'number') {
-            // Update audio volume based on new position
-            updateAudioVolumeBasedOnPosition(data.z);
-          }
-        }
-      } catch (error) {
-        console.error('Error in camera position health handler:', error);
-      }
-    };
-    
-    // Listen for camera position events from the simulator
-    window.addEventListener('cameraPosition', enhancedCameraPositionHandler);
-    
-    // Set up periodic health check
-    cameraPositionHealthCheckRef.current = window.setInterval(() => {
-      const now = Date.now();
-      const timeSinceLastUpdate = now - lastCameraUpdateTimeRef.current;
-      
-      // Log health status periodically
-      if (now % 60000 < 10000) {
-        console.log(`Camera position health: ${cameraUpdateCountRef.current} updates in last 10s, last update ${(timeSinceLastUpdate/1000).toFixed(1)}s ago`);
-      }
-      
-      // Check if system is unhealthy
-      if (timeSinceLastUpdate > maxPositionUpdateGapRef.current) {
-        console.warn(`⚠️ Camera position system unhealthy: No updates for ${(timeSinceLastUpdate/1000).toFixed(1)}s`);
-        
-        if (recoveryAttemptsRef.current < MAX_CAMERA_RECOVERY_ATTEMPTS) {
-          // Attempt recovery
-          recoveryAttemptsRef.current++;
-          console.log(`Recovery attempt ${recoveryAttemptsRef.current}/${MAX_CAMERA_RECOVERY_ATTEMPTS}`);
-          
-          // Use last known position to force an update
-          if (lastCameraZRef.current !== null) {
-            console.log(`Forcing audio update with last height: ${lastCameraZRef.current}m`);
-            updateAudioVolumeBasedOnPosition(lastCameraZRef.current);
-            updateAllAudioVolumes();
-          }
-        } else {
-          console.error(`⛔ Maximum recovery attempts reached. Please restart if audio issues persist.`);
-          setTimeout(() => recoveryAttemptsRef.current = 0, 60000);
-        }
-      }
-      
-      // Reset counter for next check interval
-      cameraUpdateCountRef.current = 0;
-    }, 10000);
-    
-    // Cleanup
-    return () => {
-      window.removeEventListener('cameraPosition', enhancedCameraPositionHandler);
-      if (cameraPositionHealthCheckRef.current) {
-        window.clearInterval(cameraPositionHealthCheckRef.current);
-      }
-    };
-  }, []);
-  */
-
-  // Update the addPositionToHistory function to provide stronger smoothing
-  const addPositionToHistory = (zPosition: number): number => {
-    const history = zPositionHistoryRef.current;
-    
-    // Add new position to history
-    history.push(zPosition);
-    
-    // Keep history at maximum size
-    if (history.length > MAX_POSITION_HISTORY) {
-      history.shift(); // Remove oldest entry
-    }
-    
-    // Average the positions using a weighted average
-    // More recent values have higher weight
-    if (history.length > 3) {
-      let sum = 0;
-      let weightSum = 0;
-      
-      for (let i = 0; i < history.length; i++) {
-        const weight = i + 1; // Weight increases with recency
-        sum += history[i] * weight;
-        weightSum += weight;
-      }
-      
-      return sum / weightSum;
-    }
-    
-    // Not enough history, return the original value
-    return zPosition;
-  };
-
-  // Add a flag to track when an announcement is playing (prevents audio fighting)
-  const isAnnouncementPlayingRef = useRef<boolean>(false);
-  
-  // Add a function to safely set boarding music volume with priority levels
-  const setBoardingMusicVolume = (volume: number, priority: 'low' | 'medium' | 'high' | 'critical') => {
-    if (!boardingMusicRef.current) return;
-    
-    // Map priority levels to numeric values
-    const priorityMap = {
-      'low': 1,
-      'medium': 2,
-      'high': 3,
-      'critical': 4
-    };
-    
-    // Get current priority
-    const currentPriority = boardingMusicRef.current.dataset.priorityLevel ? 
-      parseInt(boardingMusicRef.current.dataset.priorityLevel) : 0;
-    
-    // Only allow changes if the new priority is higher or equal
-    if (priorityMap[priority] >= currentPriority) {
-      console.log(`[VOLUME-CTRL] Setting boarding music to ${volume.toFixed(2)} with priority ${priority}`);
-      boardingMusicRef.current.volume = volume;
-      boardingMusicRef.current.dataset.priorityLevel = priorityMap[priority].toString();
-    } else {
-      console.log(`[VOLUME-CTRL] Rejected volume change to ${volume.toFixed(2)} - current priority ${currentPriority} beats ${priority}`);
-    }
-  };
-
-  // Function to update zone and volume based on camera position
-  const updateZoneFromPosition = (cameraZ: number) => {
-    const now = Date.now();
-    
-    // Record the last known height for recovery purposes
-    if (!isNaN(cameraZ) && cameraZ !== 0) {
-      lastCameraZRef.current = cameraZ;
-    }
-    
-    // Check if we're updating too frequently
-    if (now - lastPositionUpdateTimeRef.current < 100) { // 100ms frequency limit
-      positionUpdateSkipCountRef.current++;
-      if (positionUpdateSkipCountRef.current % 10 === 0) {
-        console.log(`[POSITION] Skipped ${positionUpdateSkipCountRef.current} updates due to high frequency`);
-      }
-      return;
-    }
-    
-    // Reset skip counter and update timestamp
-    positionUpdateSkipCountRef.current = 0;
-    lastPositionUpdateTimeRef.current = now;
-    
-    // Log position check for debugging
-    console.log(`[POSITION] Checking position: ${cameraZ.toFixed(2)}`);
-    
-    // Determine zone based on height
-    let newZone = "";
-    if (cameraZ > -1.60) {
-      newZone = 'outside';
-    } else if (cameraZ > -12.0) {
-      newZone = 'jetway';
-    } else if (cameraZ > -22.4) {
-      newZone = 'cabin';
-    } else if (cameraZ > -24.3) {
-      newZone = 'cockpit';
-    } else {
-      newZone = 'outside';
-    }
-    
-    // Only update if zone has changed
-    if (newZone !== currentZoneRef.current) {
-      console.log(`[POSITION] Zone changed: ${currentZoneRef.current || 'none'} -> ${newZone}`);
-      currentZoneRef.current = newZone;
-      setCurrentZone(newZone);
-      
-      // Reset zone recovery counter since we had a successful update
-      zoneRecoveryAttemptsRef.current = 0;
-      
-      // Update audio volumes based on new zone
-      updateAllAudioVolumes();
-    }
-  };
-
-  // Add a health check function for the zone system
-  const lastPositionUpdateTimeRef = useRef<number>(Date.now());
-  const zoneRecoveryAttemptsRef = useRef<number>(0); 
-  const positionUpdateSkipCountRef = useRef<number>(0);
-  
-  useEffect(() => {
-    console.log('[HEALTH] Zone health check system initialized');
-    
-    // Set up periodic health check
-    const healthCheckInterval = setInterval(() => {
-      const now = Date.now();
-      const timeSinceLastUpdate = now - lastPositionUpdateTimeRef.current;
-      
-      // Log health status periodically (approximately once per minute)
-      if (now % 60000 < 5000) {
-        console.log(`[HEALTH] Zone system status: Last update ${(timeSinceLastUpdate/1000).toFixed(1)}s ago`);
-      }
-      
-      // Check if system is unhealthy (no updates for 10 seconds)
-      if (timeSinceLastUpdate > 10000) {
-        console.warn(`⚠️ Zone system unhealthy: No updates for ${(timeSinceLastUpdate/1000).toFixed(1)}s`);
-        
-        // Only attempt recovery 3 times max
-        if (zoneRecoveryAttemptsRef.current < 3) {
-          // Attempt recovery
-          zoneRecoveryAttemptsRef.current++;
-          console.log(`[HEALTH] Recovery attempt ${zoneRecoveryAttemptsRef.current}/3`);
-          
-          // Use last known position to force an update
-          if (lastCameraZRef.current !== null) {
-            console.log(`[HEALTH] Forcing zone update with last height: ${lastCameraZRef.current}m`);
-            updateZoneFromPosition(lastCameraZRef.current);
-          }
-        } else {
-          console.error(`⛔ Maximum recovery attempts reached. System may need restart.`);
-          // Reset after 1 minute to allow future recovery attempts
-          setTimeout(() => {
-            zoneRecoveryAttemptsRef.current = 0;
-            console.log(`[HEALTH] Reset recovery counter to allow future attempts`);
-          }, 60000);
-        }
-      }
-    }, 5000); // Check every 5 seconds
-    
-    // Clean up interval on component unmount
-    return () => {
-      clearInterval(healthCheckInterval);
-    };
-  }, []);
-
-  // Cleanup effect for jetway connection
-  useEffect(() => {
-    return () => {
-      if (welcomeAboardTimerRef.current) {
-        clearTimeout(welcomeAboardTimerRef.current);
-      }
-    };
-  }, []);
-  
-  // Add a health check system for zone detection
-  useEffect(() => {
-    console.log('[HEALTH] Zone health check system initialized');
-    
-    // Set up periodic health check
-    const healthCheckInterval = setInterval(() => {
-      const now = Date.now();
-      const timeSinceLastUpdate = now - lastUpdateTimeRef.current;
-      
-      // Log health status periodically (approximately once per minute)
-      if (now % 60000 < 5000) {
-        console.log(`[HEALTH] Zone system status: Last update ${(timeSinceLastUpdate/1000).toFixed(1)}s ago`);
-      }
-      
-      // Check if system is unhealthy (no updates for 10 seconds)
-      if (timeSinceLastUpdate > 10000) {
-        console.warn(`⚠️ Zone system unhealthy: No updates for ${(timeSinceLastUpdate/1000).toFixed(1)}s`);
-        
-        // Use last known position to force an update if we have one
-        if (lastCameraZRef.current !== null) {
-          console.log(`[HEALTH] Forcing zone update with last height: ${lastCameraZRef.current}m`);
-          
-          // Determine zone based on Z position directly
-          let recoveryZone = "";
-          if (lastCameraZRef.current > -1.60) {
-            recoveryZone = 'outside';
-          } else if (lastCameraZRef.current > -12.0) {
-            recoveryZone = 'jetway';
-          } else if (lastCameraZRef.current > -22.4) {
-            recoveryZone = 'cabin';
-          } else if (lastCameraZRef.current > -24.3) {
-            recoveryZone = 'cockpit';
-          } else {
-            recoveryZone = 'outside';
-          }
-          
-          // Update if different from current zone
-          if (recoveryZone !== currentZoneRef.current) {
-            console.log(`[HEALTH] Recovered zone from ${currentZoneRef.current || 'unknown'} to ${recoveryZone}`);
-            currentZoneRef.current = recoveryZone;
-            setCurrentZone(recoveryZone);
-            updateAllAudioVolumes();
-            
-            // Reset the last update time to avoid constant recoveries
-            lastUpdateTimeRef.current = now;
-          }
-        }
-      }
-    }, 5000); // Check every 5 seconds
-    
-    // Clean up interval on component unmount
-    return () => {
-      clearInterval(healthCheckInterval);
-    };
-  }, []);
-
-  // Add movement velocity tracking to detect intentional camera moves
-  const lastPositionTimestampRef = useRef<number>(Date.now());
-  const cameraVelocityRef = useRef<number>(0);
-  const isMovingRef = useRef<boolean>(false);
-  const movementStartTimeRef = useRef<number>(0);
-  const samplingRateRef = useRef<number>(1); // 1x normal sampling during rest, can increase during movement
-  
-  // Simple direct zone detection function
-  const getCurrentZone = (cameraZ: number): string => {
-    // Simple direct zone detection based on Z position
-    if (cameraZ > -1.60) {
-      return 'outside';
-    } else if (cameraZ > -12.0) {
-      return 'jetway';
-    } else if (cameraZ > -22.4) {
-      return 'cabin';
-    } else if (cameraZ > -24.3) {
-      return 'cockpit';
-    } else {
-      return 'outside';
-    }
-  };
-  
-  // Function to get volume for zone
-  const getZoneVolume = (zone: string): number => {
-    console.log(`Getting volume for zone: ${zone}`);
-    switch (zone) {
-      case 'outside': return 0.45;    // 45%
-      case 'jetway': return 0.792;    // 79.2%
-      case 'cabin': return 0.693;     // 69.3%
-      case 'cockpit': return 0.65;    // 65%
-      default: return 0.693;          // 69.3%
-    }
-  };
-  
-  // Track last volume update timestamp for throttling
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-4">
