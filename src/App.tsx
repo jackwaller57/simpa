@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { listen } from '@tauri-apps/api/event';
-import { invoke } from '@tauri-apps/api/core';
 import './App.css';
 import { MainPage } from './pages/MainPage';
 import FlightStatusPanel from './components/FlightStatusPanel';
@@ -20,6 +19,7 @@ interface FlightState {
   seatbeltSign: boolean;
   jetwayMoving: boolean;
   jetwayState: number;
+  wingLight: boolean;
 }
 
 interface CameraPositionPayload {
@@ -36,6 +36,15 @@ interface AudioEvent {
   action: 'play' | 'stop' | 'pause';
 }
 
+// Add Window interface extension before the App component
+interface Window {
+  ipcRenderer?: {
+    send: (channel: string, ...args: any[]) => void;
+    on: (channel: string, listener: (...args: any[]) => void) => void;
+    removeListener: (channel: string, listener: (...args: any[]) => void) => void;
+  };
+}
+
 function App() {
   const [beaconLight, setBeaconLight] = useState<boolean>(false);
   const [landingLights, setLandingLights] = useState<boolean>(false);
@@ -49,6 +58,9 @@ function App() {
   const [currentAudioName, setCurrentAudioName] = useState<string>('');
   const [currentAudioVolume, setCurrentAudioVolume] = useState<number>(0);
   const [currentZone, setCurrentZone] = useState<string>('outside');
+  const [timeSinceLastUpdate, setTimeSinceLastUpdate] = useState(0);
+  const currentTimeRef = useRef(Date.now());
+  const [wingLightCount, setWingLightCount] = useState<number>(0);
   const [flightState, setFlightState] = useState<FlightState>({
     xPosition: 0,
     yPosition: 0,
@@ -59,7 +71,8 @@ function App() {
     beaconLight: false,
     seatbeltSign: false,
     jetwayMoving: false,
-    jetwayState: 0
+    jetwayState: 0,
+    wingLight: false
   });
   const [hasLanded, setHasLanded] = useState<boolean>(false);
   const [touchdownData, setTouchdownData] = useState<{
@@ -110,6 +123,8 @@ function App() {
   const currentZoneRef = useRef<string | null>(null);
   const welcomeAboardTimerRef = useRef<number | null>(null);
   const isAlmostReadyPlayingRef = useRef<boolean>(false);
+  const lastWingLightStateRef = useRef<boolean>(false);
+  const isWingLightAudioPlayingRef = useRef<boolean>(false);
  
   const positionHistoryRef = useRef<number[]>([]);
   const lastUpdateTimeRef = useRef<number>(0);
@@ -155,6 +170,27 @@ function App() {
   // Add audio ref for beacon light sound
   const beaconLightSoundRef = useRef<HTMLAudioElement | null>(null);
   const isBeaconAudioPlayingRef = useRef<boolean>(false);
+
+  // Add a flag to indicate when wing light is manually controlled
+  // const [wingLightManualOverride, setWingLightManualOverride] = useState<boolean>(false);
+  
+  // // Create a wrapper for setFlightState to track wing light changes
+  // const setFlightStateWithTracking = (newStateOrFunction: React.SetStateAction<FlightState>) => {
+  //   setFlightState(prevState => {
+  //     // Calculate the new state
+  //     const newState = typeof newStateOrFunction === 'function'
+  //       ? (newStateOrFunction as (prev: FlightState) => FlightState)(prevState)
+  //       : newStateOrFunction;
+  //       
+  //     // Check if wing light state is changing
+  //     if (newState.wingLight !== prevState.wingLight) {
+  //       console.log(`[WING LIGHT TRACKER] State changing from ${prevState.wingLight} to ${newState.wingLight}`);
+  //       console.trace('[WING LIGHT TRACKER] Stack trace:');
+  //     }
+  //     
+  //     return newState;
+  //   });
+  // };
 
   // Function to smoothly transition volume
   const fadeVolume = (element: HTMLAudioElement, targetVolume: number) => {
@@ -1129,6 +1165,82 @@ function App() {
     }
   };
 
+  // Function to handle wing light state changes
+  const handleWingLightChange = (newState: boolean) => {
+    console.log('=== Wing Light State Change ===');
+    console.log(`Previous state: ${flightState.wingLight ? 'ON' : 'OFF'}`);
+    console.log(`New State: ${newState ? 'ON' : 'OFF'}`);
+    console.log(`Current count: ${wingLightCount}`);
+    
+    // Only update if the state actually changed
+    if (flightState.wingLight !== newState) {
+      console.log('State changed, updating flight state...');
+      
+      // If wing light was turned ON (transition from OFF to ON)
+      if (!lastWingLightStateRef.current && newState) {
+        // Increment the count
+        setWingLightCount(prevCount => {
+          const newCount = prevCount + 1;
+          console.log(`Incrementing wing light count from ${prevCount} to ${newCount}`);
+          
+          // If audio is currently playing, don't interrupt it
+          if (isWingLightAudioPlayingRef.current) {
+            console.log('Wing light audio already playing, ignoring event');
+            return newCount;
+          }
+          
+          // Play announcement if count is 1 or less
+          if (newCount <= 1) {
+            console.log('Playing "Seats For Departure" announcement (wing light count is 1 or less)');
+            if (seatsForDepartureRef.current) {
+              // Set flag to track that wing light audio is playing
+              isWingLightAudioPlayingRef.current = true;
+              
+              // Play announcement with proper volume
+              playAnnouncementWithVolume(seatsForDepartureRef, 'seats_for_departure', () => {
+                console.log('Seats for departure announcement finished, resetting flag');
+                isWingLightAudioPlayingRef.current = false;
+              });
+            } else {
+              console.error('Seats for departure audio element not found');
+            }
+          } else {
+            console.log('Not playing announcement - wing light count is greater than 1');
+          }
+          
+          return newCount;
+        });
+      }
+      
+      // Update the last state after processing the change
+      lastWingLightStateRef.current = newState;
+      setFlightState(prev => ({
+        ...prev,
+        wingLight: newState
+      }));
+    } else {
+      console.log('State unchanged, no update needed');
+    }
+    
+    console.log('=== End Wing Light State Change ===');
+  };
+
+  // Function to handle wing light events
+  const handleWingLightEvent = (event: any) => {
+    try {
+      if (!event || !event.payload) {
+        console.error('Invalid wing light event:', event);
+        return;
+      }
+
+      const data = event.payload as { state: boolean };
+      console.log('Wing light event received:', data);
+      handleWingLightChange(data.state);
+    } catch (error) {
+      console.error('Error handling wing light event:', error);
+    }
+  };
+
   // Set up event listeners
   useEffect(() => {
     // Subscribe to events from SimConnect
@@ -1146,6 +1258,8 @@ function App() {
           handleLandingLightsEvent(event);
         } else if (event?.type === 'BEACON_LIGHT') {
           handleBeaconLightEvent(event);
+        } else if (event?.type === 'WING_LIGHT') {
+          handleWingLightEvent(event);
         } else if (event?.type === 'SEATBELT_SIGN') {
           handleSeatbeltSignEvent(event);
         } else if (event?.type === 'GSX_BYPASS_PIN') {
@@ -1160,14 +1274,45 @@ function App() {
       }
     };
 
-    // Set up event listener
+    // Set up event listener for simconnect-data
     const unsubscribe = listen('simconnect-data', handleSimConnectEvent);
+    
+    // Set up event listener for wing-light-changed with more logging
+    console.log('Setting up wing-light-changed event listener');
+    const unsubscribeWingLight = listen('wing-light-changed', (event: { payload: { state: boolean } }) => {
+      console.log('Wing light changed event received:', event);
+      if (event && event.payload && typeof event.payload.state === 'boolean') {
+        console.log(`Wing light state changed to ${event.payload.state ? 'ON' : 'OFF'}`);
+        handleWingLightChange(event.payload.state);
+      } else {
+        console.error('Invalid wing light event payload:', event);
+      }
+    });
+    
+    // Debug other events
+    const unsubscribeDebug = listen('*', (event) => {
+      // Filter out common events to avoid noise
+      if (!event.event.startsWith('tauri://') && 
+          event.event !== 'simconnect-data' &&
+          !['window-resized', 'window-moved', 'window-focus'].includes(event.event)) {
+        console.log(`Received event: ${event.event}`, event);
+      }
+    });
     
     // Cleanup
     return () => {
-      unsubscribe.then(fn => fn());
+      console.log('Cleaning up event listeners');
+      if (unsubscribe) {
+        unsubscribe.then(fn => fn());
+      }
+      if (unsubscribeWingLight) {
+        unsubscribeWingLight.then(fn => fn());
+      }
+      if (unsubscribeDebug) {
+        unsubscribeDebug.then(fn => fn());
+      }
     };
-  }, [flightState.zPosition, masterVolume]);
+  }, [flightState.zPosition, masterVolume]); // Restore original dependency array
 
   // Listen for simconnect data
   const unlistenSimconnect = listen('simconnect-data', (event) => {
@@ -1204,7 +1349,8 @@ function App() {
         touchdownHeadingDegrees?: number,
         touchdownLateralVelocity?: number,
         touchdownLongitudinalVelocity?: number,
-        gsxBypassPin?: boolean
+        gsxBypassPin?: boolean,
+        wingLight?: boolean
       };
       
       // Enhanced debugging for beacon light and seatbelt sign properties
@@ -1366,7 +1512,8 @@ function App() {
           beaconLight: data.beaconLight ?? prev.beaconLight,
           seatbeltSign: data.seatbeltSign ?? prev.seatbeltSign,
           jetwayMoving: data.jetwayMoving ?? prev.jetwayMoving,
-          jetwayState: data.jetwayState ? 1 : 0
+          jetwayState: data.jetwayState ? 1 : 0,
+          wingLight: data.wingLight ?? prev.wingLight
         }));
         
         lastCameraZRef.current = data.zPosition;
@@ -1713,7 +1860,7 @@ function App() {
                             }, { once: true });
                           })
                           .catch(error => {
-                            console.error('Error playing welcome aboard:', error);
+                            console.error('Error playing first welcome aboard:', error);
                           });
                       }
                     }, nextInterval);
@@ -2109,241 +2256,68 @@ function App() {
   }, [flightState.zPosition, masterVolume]);
 
   // Function to handle SimConnect data
-  const handleSimConnectData = (data: any) => {
-    if (data && typeof data === 'object') {
-      // Update position and flight data
-      const now = Date.now();
-      const timeSinceLastUpdate = now - lastUpdateTimeRef.current;
+  const handleSimConnectData = useCallback((event: MessageEvent) => {
+    // ... existing code ...
+    
+    if (event.data.type === 'simconnect') {
+      // ... existing code ...
       
-      // Only update if enough time has passed since the last update
-      if (timeSinceLastUpdate > MIN_UPDATE_INTERVAL) {
-        // Update the state
-        setFlightState(prevState => {
-          const newState = { ...prevState };
-          
-          // Update position only if values have changed significantly
-          if (Math.abs((data.xPosition || 0) - (prevState.xPosition || 0)) > POSITION_THRESHOLD) {
-            newState.xPosition = data.xPosition;
-          }
-          if (Math.abs((data.yPosition || 0) - (prevState.yPosition || 0)) > POSITION_THRESHOLD) {
-            newState.yPosition = data.yPosition;
-          }
-          if (Math.abs((data.zPosition || 0) - (prevState.zPosition || 0)) > POSITION_THRESHOLD) {
-            newState.zPosition = data.zPosition;
-            lastZPositionRef.current = data.zPosition;
-          }
-          
-          // Always update these values as they're discrete
-          if (data.speed !== undefined) newState.speed = data.speed;
-          if (data.heading !== undefined) newState.heading = data.heading;
-          if (data.cameraViewType !== undefined) newState.cameraViewType = data.cameraViewType;
-          
-          // Process beacon light changes via dedicated handler
-          if (data.beaconLight !== undefined) {
-            console.log(`Received beacon light state: ${data.beaconLight ? 'ON' : 'OFF'}`);
-            handleBeaconLightChange(data.beaconLight);
-          }
-          
-          // Process seatbelt sign changes via dedicated handler
-          if (data.seatbeltSign !== undefined) {
-            console.log(`Received seatbelt sign state: ${data.seatbeltSign ? 'ON' : 'OFF'}`);
-            handleSeatbeltSignChange(data.seatbeltSign);
-          }
-          
-          // Handle jetway state
-          if (data.jetwayState !== undefined) {
-            newState.jetwayState = data.jetwayState;
-            if (data.jetwayState === 1) {
-              jetwayAttachedRef.current = true;
-            } else {
-              jetwayAttachedRef.current = false;
-            }
-          }
-          
-          if (data.jetwayMoving !== undefined) {
-            newState.jetwayMoving = data.jetwayMoving;
-          }
-          
-          return newState;
-        });
+      // Update the state when wing light changes
+      if (event.data.wing_light !== undefined) {
+        const newWingLightState = event.data.wing_light;
+        console.log(`[HANDLER] Received wing light state: ${newWingLightState}`);
         
-        // Process altitude changes for announcements
-        if (data.altitude !== undefined) {
-          const altitude = data.altitude;
-          if (lastAltitudeRef.current === 0) {
-            lastAltitudeRef.current = altitude;
-          } else {
-            // Check for 10,000 feet announcements (in descent phase)
-            if (!tenKAnnouncedRef.current && lastAltitudeRef.current > 10000 && altitude <= 10000) {
-              console.log('Descended through 10,000 feet, playing announcement');
-              tenKAnnouncedRef.current = true;
-              hasDescendedThrough10kRef.current = true;
-              if (tenKFeetRef.current) {
-                playAltitudeAnnouncement(tenKFeetRef, '10k feet');
-              }
-            }
-            
-            // Check for "arrive soon" announcements (around 8,000 feet)
-            if (!arriveSoonAnnouncedRef.current && lastAltitudeRef.current > 8000 && altitude <= 8000) {
-              console.log('Descended through 8,000 feet, playing arrive soon announcement');
-              arriveSoonAnnouncedRef.current = true;
-              if (arriveSoonRef.current) {
-                playAltitudeAnnouncement(arriveSoonRef, 'arrive soon');
-              }
-            }
-            
-            // Check for "landing soon" announcements (around 3,000 feet)
-            if (!landingSoonAnnouncedRef.current && lastAltitudeRef.current > 3000 && altitude <= 3000) {
-              console.log('Descended through 3,000 feet, playing landing soon announcement');
-              landingSoonAnnouncedRef.current = true;
-              if (landingSoonRef.current) {
-                playAltitudeAnnouncement(landingSoonRef, 'landing soon');
-              }
-            }
-            
-            // Update last altitude
-            lastAltitudeRef.current = altitude;
-          }
+        if (flightState.wingLight !== newWingLightState) {
+          console.log(`[MAIN HANDLER] Updating wingLight state: ${flightState.wingLight} -> ${newWingLightState}`);
+          setFlightState(prev => ({
+            ...prev,
+            wingLight: newWingLightState
+          }));
         }
-        
-        // Process landing lights changes
-        if (data.landingLights !== undefined) {
-          handleLandingLightsChange(data.landingLights);
-        }
-        
-        // Update timestamps
-        lastUpdateTimeRef.current = now;
       }
       
-      // Always update volume based on camera position if it has changed
-      if (data.zPosition !== undefined) {
-        // Update audio volume based on camera position
-        const currentZ = data.zPosition || lastCameraZRef.current || 0;
-        updateAudioVolumeBasedOnPosition(currentZ);
-      }
+      // ... existing code ...
     }
-  };
-
-  // Function to update audio volume based on camera position
-  const updateAudioVolumeBasedOnPosition = (cameraZ: number) => {
-    const now = Date.now();
-    
-    // Get zone based on camera position
-    const zone = getCurrentZone(cameraZ);
-    const baseVolume = getZoneVolume(zone);
-    
-    // Always update the UI zone immediately regardless of debounce
-    if (zone !== currentZoneRef.current) {
-      console.log(`Zone changed from ${currentZoneRef.current} to ${zone} - updating UI immediately`);
-      setCurrentZone(zone);
-      currentZoneRef.current = zone;
-    }
-    
-    // Apply debounce to volume updates only
-    if (now - lastVolumeUpdateRef.current < VOLUME_DEBOUNCE_TIME) {
-      console.log(`Skipping volume update - too soon since last update (${now - lastVolumeUpdateRef.current}ms < ${VOLUME_DEBOUNCE_TIME}ms)`);
-      return;
-    }
-    
-    console.log(`Updating volume for zone: ${zone}, base volume: ${baseVolume}, master volume: ${masterVolume}`);
-    
-    // Update all audio elements with the appropriate volume
-    const updateVolume = (ref: React.MutableRefObject<HTMLAudioElement | null>, name: string) => {
-      if (ref.current) {
-        // Calculate logarithmic volume for better perceived response
-        const logVolume = toLogVolume(baseVolume * 100);
-        // Apply master volume control
-        const finalVolume = (masterVolume / 100) * logVolume;
+    // ... existing code ...
+  }, [flightState]);
+  
+  // Remove the direct listener with manual override check
+  useEffect(() => {
+    const handleWingLightDirectEvent = (event: MessageEvent) => {
+      if (event.data.type === 'wing_light') {
+        const newWingLightState = event.data.value;
+        console.log(`[DIRECT LISTENER] Received wing light state: ${newWingLightState}`);
         
-        // Only update if the volume has actually changed
-        if (ref.current.volume !== finalVolume) {
-          console.log(`Setting ${name} volume to ${finalVolume} (base: ${baseVolume}, log: ${logVolume})`);
-          ref.current.volume = finalVolume;
+        if (flightState.wingLight !== newWingLightState) {
+          console.log(`[DIRECT LISTENER] Updating wingLight state: ${flightState.wingLight} -> ${newWingLightState}`);
+          setFlightState(prev => ({
+            ...prev,
+            wingLight: newWingLightState
+          }));
         }
       }
     };
     
-    // Update all audio elements
-    if (boardingMusicRef.current) updateVolume(boardingMusicRef, 'boarding music');
-    updateVolume(welcomeAboardRef, 'welcome aboard');
-    updateVolume(doorsAutoRef, 'doors auto');
-    updateVolume(tenKFeetRef, '10k feet');
-    updateVolume(arriveSoonRef, 'arrive soon');
-    updateVolume(landingSoonRef, 'landing soon');
-    updateVolume(weveArrivedRef, 'weve arrived');
-    updateVolume(almostReadyRef, 'almost ready');
-    updateVolume(seatsForDepartureRef, 'seats for departure');
-    updateVolume(safetyVideoRef, 'safety video');
-    updateVolume(fastenSeatbeltRef, 'fasten seatbelt');
+    window.addEventListener('message', handleWingLightDirectEvent);
+    return () => window.removeEventListener('message', handleWingLightDirectEvent);
+  }, [flightState]);
+  
+  // Toggle wing light function without manual override
+  const toggleWingLight = () => {
+    console.log(`[USER] Toggle wing light clicked, current state: ${flightState.wingLight}`);
     
-    // Update volume indicator for UI display
-    setCurrentVolume(baseVolume * 100);
+    setFlightState(prev => ({
+      ...prev,
+      wingLight: !prev.wingLight
+    }));
     
-    // Update last volume update time and camera position
-    lastVolumeUpdateRef.current = now;
-    lastCameraZRef.current = cameraZ;
+    // Send message to backend to toggle the wing light
+    // Safely access ipcRenderer if it exists
+    const ipcRenderer = (window as any).ipcRenderer;
+    if (ipcRenderer) {
+      ipcRenderer.send('toggle-wing-light');
+    }
   };
-
-  // Add direct zone control constants 
-  const DIRECT_MODE_ENABLED = true; // Enable direct mode for zone control
-  const MIN_VOLUME_UPDATE_INTERVAL = 250; // ms between volume updates
-  const lastDirectVolumeUpdateRef = useRef<number>(Date.now());
-  
-  // Force zone update (bypasses all existing logic)
-  function forceZoneUpdate(z: number) {
-    if (!DIRECT_MODE_ENABLED) return;
-    
-    // Add throttling to prevent too frequent updates
-    const now = Date.now();
-    const timeSinceLastUpdate = now - lastDirectVolumeUpdateRef.current;
-    
-    if (timeSinceLastUpdate < MIN_VOLUME_UPDATE_INTERVAL) {
-      // Only log occasionally to reduce console spam
-      if (Math.random() < 0.1) { // Log roughly 10% of skipped updates
-        console.log(`🔴 DIRECT: Skipping volume update, too soon (${timeSinceLastUpdate}ms < ${MIN_VOLUME_UPDATE_INTERVAL}ms)`);
-      }
-      return;
-    }
-    
-    // Skip volume updates during critical announcements
-    if (isPlayingCriticalAnnouncementRef.current) {
-      console.log(`🔴 DIRECT: Skipping volume update during critical announcement playback`);
-      return;
-    }
-    
-    const directZone = getCurrentZone(z);
-    const directVolume = getZoneVolume(directZone);
-    
-    // Update timestamp before processing to prevent race conditions
-    lastDirectVolumeUpdateRef.current = now;
-    
-    // Only log zone changes or significant updates
-    if (directZone !== currentZoneRef.current || now - lastVolumeUpdateRef.current > 2000) {
-      console.log(`🔴 DIRECT: z=${z.toFixed(2)} → zone=${directZone}, volume=${directVolume}`);
-    }
-    
-    // Force UI update only if zone changed to reduce React re-renders
-    if (directZone !== currentZoneRef.current) {
-      setCurrentZone(directZone);
-      setCurrentVolume(directVolume * 100);
-      
-      // Force ref update
-      currentZoneRef.current = directZone;
-    }
-    
-    lastVolumeUpdateRef.current = now;
-  }
-  
-  // Start critical announcement protection
-  const startCriticalAnnouncement = () => {
-    isPlayingCriticalAnnouncementRef.current = true;
-    return () => {
-      isPlayingCriticalAnnouncementRef.current = false;
-    };
-  };
-  
-  // Add ref for critical announcements
-  const isPlayingCriticalAnnouncementRef = useRef<boolean>(false);
 
   return (
     <div className="min-h-screen bg-gray-900 text-white p-4">
@@ -2351,7 +2325,7 @@ function App() {
         <div className="flex flex-col lg:flex-row gap-6">
           {/* Flight Status Panel */}
           <div className="flex-1">
-            <FlightStatusPanel
+            <FlightStatusPanel 
               flightState={flightState}
               currentVolume={currentVolume}
               masterVolume={masterVolume}
@@ -2369,6 +2343,7 @@ function App() {
               touchdownData={touchdownData}
               onVolumeChange={handleVolumeChange}
               onResetSeatbeltCount={resetSeatbeltCount}
+              onToggleWingLight={toggleWingLight}
             />
           </div>
 

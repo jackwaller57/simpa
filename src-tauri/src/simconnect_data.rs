@@ -51,6 +51,8 @@ struct FlightDataState {
     last_jetway_update: std::time::Instant,  // Add this field
     gsx_bypass_pin: bool,  // Add GSX bypass pin state
     seatbelt_sign: bool,  // Add seatbelt sign state
+    landing_lights: bool,  // Add landing lights state
+    wing_light: bool,  // Add wing light state
 }
 
 impl FlightDataState {
@@ -82,6 +84,8 @@ impl FlightDataState {
             last_jetway_update: std::time::Instant::now(),  // Initialize the new field
             gsx_bypass_pin: false,  // Initialize GSX bypass pin state
             seatbelt_sign: false,  // Initialize seatbelt sign state
+            landing_lights: false,  // Initialize landing lights state
+            wing_light: false,  // Initialize wing light state
         }
     }
 
@@ -177,7 +181,9 @@ impl FlightDataState {
             "cameraViewType": self.camera_view_type,
             "volumeLevel": self.volume_level,
             "gsxBypassPin": self.gsx_bypass_pin,
-            "seatbeltSign": self.seatbelt_sign
+            "seatbeltSign": self.seatbelt_sign,
+            "landingLights": self.landing_lights,
+            "wingLight": self.wing_light,
         })
     }
 }
@@ -350,6 +356,27 @@ pub fn start_simconnect_data_collection(
             conn.request_data_on_sim_object(
                 4,  // Same ID as above
                 4,  // Same ID as above
+                0,
+                simconnect::SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_SECOND,
+                0,
+                0,
+                0,
+                0
+            );
+
+            // Add wing light state definition - try a more noticeable light
+            conn.add_data_definition(
+                13,  // New ID for wing lights
+                "LIGHT WING",  // Changed from LIGHT LOGO which was stuck ON
+                "Bool",
+                simconnect::SIMCONNECT_DATATYPE_SIMCONNECT_DATATYPE_INT32,
+                0,
+                0.0
+            );
+
+            conn.request_data_on_sim_object(
+                13,  // Same ID as above
+                13,  // Same ID as above
                 0,
                 simconnect::SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_SECOND,
                 0,
@@ -532,12 +559,13 @@ pub fn start_simconnect_data_collection(
         let mut prev_beacon_state = -1;
         let mut prev_seatbelt_state = -1;
         let mut prev_landing_lights_state = -1;  // Add this line
+        let mut prev_wing_light_state = -1;  // Track wing light state
         let mut last_seatbelt_event_time = std::time::Instant::now();
         let seatbelt_debounce_ms = std::time::Duration::from_millis(3000); // 3 second debounce
         
         // Debug logging for initial state values
-        println!("[DEBUG] Initial state: prev_beacon_state={}, prev_seatbelt_state={}, prev_landing_lights_state={}", 
-            prev_beacon_state, prev_seatbelt_state, prev_landing_lights_state);
+        println!("[DEBUG] Initial state: prev_beacon_state={}, prev_seatbelt_state={}, prev_landing_lights_state={}, prev_wing_light_state={}", 
+            prev_beacon_state, prev_seatbelt_state, prev_landing_lights_state, prev_wing_light_state);
         
         while *arc_state.running.lock().unwrap() {
             match conn.get_next_message() {
@@ -781,14 +809,13 @@ pub fn start_simconnect_data_collection(
                                 let landing_lights_state = *data_ptr;
                                 
                                 if landing_lights_state != prev_landing_lights_state {
-                                    println!("Landing lights state changed: {} -> {}", 
-                                        if prev_landing_lights_state == 1 { "ON" } else { "OFF" },
-                                        if landing_lights_state == 1 { "ON" } else { "OFF" }
-                                    );
                                     prev_landing_lights_state = landing_lights_state;
                                     let _ = window.emit("landing-lights-changed", json!({
                                         "state": landing_lights_state == 1
                                     }));
+                                    
+                                    // Also update the flight state
+                                    flight_state.landing_lights = landing_lights_state == 1;
                                 }
                             },
                             5 => { // Camera state data
@@ -977,6 +1004,54 @@ pub fn start_simconnect_data_collection(
                                     let _ = window.emit("simconnect-data", flight_state.get_payload());
                                 }
                             },
+                            13 => { // Taxi light data to use as wing light
+                                let data_ptr = std::ptr::addr_of!(data.dwData) as *const i32;
+                                let light_value = *data_ptr;
+                                
+                                // Print the raw value for debugging
+                                println!("[DEBUG] LIGHT WING (Wing light) raw value from simulator: {}", light_value);
+                                
+                                // Some simulator variables might return 0=OFF, 1=ON, but others return different values
+                                // Let's check all possible interpretations
+                                let is_on_eq_1 = light_value == 1;  // exactly 1
+                                let is_on_neq_0 = light_value != 0; // any non-zero value
+                                let is_on_gt_0 = light_value > 0;   // any positive value
+                                
+                                println!("[DEBUG] Light interpretations: ==1: {}, !=0: {}, >0: {}", 
+                                    is_on_eq_1, is_on_neq_0, is_on_gt_0);
+                                
+                                // Let's use != 0 as our interpretation
+                                let is_on = is_on_neq_0;
+                                
+                                // Always update the flight state
+                                let old_state = flight_state.wing_light;
+                                flight_state.wing_light = is_on;
+                                println!("[DEBUG] Updated wing_light state in flight_state: {} -> {}", 
+                                    old_state, flight_state.wing_light);
+                                
+                                // Emit regular simconnect-data event every time we receive wing light data
+                                println!("[DEBUG] Emitting simconnect-data with wingLight={}", flight_state.wing_light);
+                                let _ = window.emit("simconnect-data", flight_state.get_payload());
+                                
+                                // Only emit dedicated event if state changed
+                                if light_value != prev_wing_light_state {
+                                    prev_wing_light_state = light_value;
+                                    println!("[DEBUG] Light state changed! Emitting wing-light-changed event with state={}", is_on);
+                                    
+                                    // Try emitting with all possible event name variations to see what works
+                                    for event_name in ["wing-light-changed", "WING_LIGHT", "WING-LIGHT-CHANGED", "wingLightChanged"] {
+                                        let result = window.emit(event_name, json!({
+                                            "state": is_on
+                                        }));
+                                        
+                                        if let Err(e) = result {
+                                            println!("[ERROR] Failed to emit {} event: {}", event_name, e);
+                                        } else {
+                                            println!("[DEBUG] Successfully emitted {} event", event_name);
+                                        }
+                                    }
+                                }
+                            },
                             _ => {
                                 // Only log unknown DefineIDs if we're in debug mode
                                 #[cfg(debug_assertions)]
@@ -1080,6 +1155,27 @@ pub fn stop_simconnect_data_collection(
     *running_flag = false;
     let _ = window.emit("simconnect-quit", json!({}));
     println!("SimConnect stopped.");
+}
+
+/// Toggles the wing light state.
+#[tauri::command]
+pub fn toggle_wing_light(
+    window: Window,
+    state: State<Arc<SimConnectState>>
+) {
+    // Check if running
+    if !*state.running.lock().unwrap() {
+        let _ = window.emit("simconnect-error", json!({
+            "message": "SimConnect is not running"
+        }));
+        return;
+    }
+
+    println!("Received request to toggle wing light");
+    
+    // Emit an event to the frontend to toggle the wing light state
+    let _ = window.emit("wing-light-toggle", json!({}));
+    println!("Emitted wing-light-toggle event");
 }
 
 

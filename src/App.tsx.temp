@@ -1,6 +1,67 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 
 function App() {
+  const unlistenJetwayDetached = listen('jetway-detached', () => {
+    console.log('[DEBUG] Received jetway-detached event');
+    try {
+      // Stop any welcome aboard audio
+      if (welcomeAboardRef.current) {
+        welcomeAboardRef.current.pause();
+        welcomeAboardRef.current.currentTime = 0;
+      }
+      
+      // Stop boarding music
+      if (boardingMusicRef.current) {
+        boardingMusicRef.current.pause();
+        boardingMusicRef.current.currentTime = 0;
+      }
+      
+      // Schedule doors auto with frontend timer
+      console.log('[DEBUG] Scheduling doors auto from frontend');
+      setTimeout(() => {
+        try {
+          console.log('[DEBUG] Playing doors auto from frontend timer');
+          if (doorsAutoRef.current) {
+            doorsAutoRef.current.currentTime = 0;
+            doorsAutoRef.current.play().catch(error => {
+              console.error('[DEBUG] Error playing doors auto:', error);
+            });
+          }
+        } catch (e) {
+          console.error('[DEBUG] Error in doors auto playback:', e);
+        }
+      }, 15000);
+    } catch (error) {
+      console.error('[DEBUG] Error handling jetway-detached event:', error);
+    }
+  });
+
+  useEffect(() => {
+    return () => {
+      // Add to your existing cleanup
+      unlistenJetwayDetached.then(fn => fn());
+    };
+  }, []);
+
+  // Add debug monitor for We've arrived conditions
+  useEffect(() => {
+    // Create an interval to check and log the conditions
+    const debugInterval = setInterval(() => {
+      console.log('===== "We\'ve arrived" conditions check =====');
+      console.log(`hasDescendedThrough10k: ${hasDescendedThrough10k}`);
+      console.log(`hasDescendedThrough10kRef.current: ${hasDescendedThrough10kRef.current}`);
+      console.log(`landingLightsOffCount: ${landingLightsOffCount}`);
+      console.log(`weveArrivedRef.current exists: ${!!weveArrivedRef.current}`);
+      if (weveArrivedRef.current) {
+        console.log(`weveArrivedRef.current.src: ${weveArrivedRef.current.src}`);
+        console.log(`weveArrivedRef.current.error: ${weveArrivedRef.current.error}`);
+      }
+      console.log('=========================================');
+    }, 5000);
+    
+    return () => clearInterval(debugInterval);
+  }, [hasDescendedThrough10k, landingLightsOffCount]);
+
   return <div>Hello World!</div>;
 }
 
