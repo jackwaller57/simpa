@@ -1956,24 +1956,21 @@ function App() {
     } else {
       // Jetway detached - stop all audio and play doors auto
       console.log('Jetway detached - stopping welcome aboard announcements');
+      
+      // Clear any welcome aboard timers
       if (welcomeAboardTimerRef.current) {
         console.log('Clearing welcome aboard announcement timer');
         clearTimeout(welcomeAboardTimerRef.current);
         welcomeAboardTimerRef.current = null;
       }
       
+      // Stop audio playback
       [boardingMusicRef, welcomeAboardRef].forEach(ref => {
         if (ref.current) {
           ref.current.pause();
           ref.current.currentTime = 0;
         }
       });
-      
-      // Clear any pending timeouts
-      const timeouts = window.setTimeout(() => {}, 0);
-      while (timeouts > 0) {
-        window.clearTimeout(timeouts);
-      }
       
       // Play doors auto after delay
       setTimeout(() => {
