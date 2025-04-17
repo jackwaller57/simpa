@@ -8,6 +8,7 @@ use tauri::Manager;
 use crate::simconnect_data::{
     start_simconnect_data_collection,
     stop_simconnect_data_collection,
+    toggle_wing_light,
     SimConnectState,
 };
 use crate::check_simconnect_status::check_simconnect_status;
@@ -22,6 +23,7 @@ pub fn run() {
             tauri::generate_handler![
                 start_simconnect_data_collection,
                 stop_simconnect_data_collection,
+                toggle_wing_light,
                 check_simconnect_status
             ]
         )

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 interface FlightStatusPanelProps {
   flightState: {
@@ -13,6 +13,7 @@ interface FlightStatusPanelProps {
     seatbeltSign: boolean;
     jetwayMoving: boolean;
     jetwayState: number;
+    wingLight: boolean;
   };
   currentVolume: number;
   masterVolume: number;
@@ -37,6 +38,9 @@ interface FlightStatusPanelProps {
   } | null;
   onVolumeChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
   onResetSeatbeltCount?: () => void;
+  onToggleWingLight?: () => void;
+  onResetWingLight?: () => void;
+  isWingLightOverridden?: boolean;
 }
 
 const FlightStatusPanel: React.FC<FlightStatusPanelProps> = ({
@@ -56,7 +60,10 @@ const FlightStatusPanel: React.FC<FlightStatusPanelProps> = ({
   seatbeltSignCount,
   touchdownData,
   onVolumeChange,
-  onResetSeatbeltCount
+  onResetSeatbeltCount,
+  onToggleWingLight,
+  onResetWingLight,
+  isWingLightOverridden
 }) => {
   return (
     <div className="bg-gray-800 rounded-lg p-4 shadow-lg">
@@ -157,6 +164,33 @@ const FlightStatusPanel: React.FC<FlightStatusPanelProps> = ({
             <span className={flightState.beaconLight ? 'text-green-400' : 'text-red-400'}>
               {flightState.beaconLight ? 'ON' : 'OFF'}
             </span>
+          </div>
+          <div className="flex items-center">
+            <span className="w-32 text-gray-400">Wing Light:</span>
+            <span className={flightState.wingLight ? 'text-green-400' : 'text-red-400'}>
+              {flightState.wingLight ? 'ON' : 'OFF'} 
+              {isWingLightOverridden && <span className="text-yellow-400 ml-1">(Manual)</span>}
+            </span>
+            <div className="ml-2 flex space-x-1">
+              {onToggleWingLight && (
+                <button 
+                  onClick={onToggleWingLight}
+                  className="bg-gray-600 hover:bg-gray-500 text-white text-xs py-1 px-2 rounded"
+                  title="Toggle wing light"
+                >
+                  Toggle
+                </button>
+              )}
+              {isWingLightOverridden && onResetWingLight && (
+                <button 
+                  onClick={onResetWingLight}
+                  className="bg-blue-600 hover:bg-blue-500 text-white text-xs py-1 px-2 rounded"
+                  title="Reset to simulator state"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
           </div>
           <div className="flex items-center">
             <span className="w-32 text-gray-400">Seatbelt Sign:</span>
