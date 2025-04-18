@@ -53,6 +53,7 @@ struct FlightDataState {
     seatbelt_sign: bool,  // Add seatbelt sign state
     landing_lights: bool,  // Add landing lights state
     wing_light: bool,  // Add wing light state
+    aircraft_type: String,  // Add aircraft type field
 }
 
 impl FlightDataState {
@@ -67,25 +68,26 @@ impl FlightDataState {
             boarding_music_playing: false,
             welcome_aboard_playing: false,
             last_welcome_aboard_time: std::time::Instant::now(),
-            next_welcome_aboard_delay: Duration::from_secs(30),
-            ten_k_announced: false,  // Initialize the new field
-            arrive_soon_announced: false,  // Initialize the new field
-            landing_soon_announced: false,  // Initialize the new field
+            next_welcome_aboard_delay: Duration::from_secs(60),
+            ten_k_announced: false,
+            arrive_soon_announced: false,
+            landing_soon_announced: false,
             camera_position: String::from("exterior"),
             x_position: 0.0,
             y_position: 0.0,
-            camera_view_type: String::from("exterior"),
-            volume_level: 0.0,
+            camera_view_type: String::from("external"),
+            volume_level: 1.0,
             z_position: 0.0,
             last_x_position: 0.0,
             last_y_position: 0.0,
             last_z_position: 0.0,
             last_substate_update: std::time::Instant::now(),
-            last_jetway_update: std::time::Instant::now(),  // Initialize the new field
-            gsx_bypass_pin: false,  // Initialize GSX bypass pin state
-            seatbelt_sign: false,  // Initialize seatbelt sign state
-            landing_lights: false,  // Initialize landing lights state
-            wing_light: false,  // Initialize wing light state
+            last_jetway_update: std::time::Instant::now(),
+            gsx_bypass_pin: false,
+            seatbelt_sign: false,
+            landing_lights: false,
+            wing_light: false,
+            aircraft_type: String::from("Unknown"),  // Initialize with Unknown
         }
     }
 
@@ -184,6 +186,7 @@ impl FlightDataState {
             "seatbeltSign": self.seatbelt_sign,
             "landingLights": self.landing_lights,
             "wingLight": self.wing_light,
+            "aircraftType": self.aircraft_type,  // Add aircraft type to the payload
         })
     }
 }
@@ -517,6 +520,48 @@ pub fn start_simconnect_data_collection(
                 12,  // Same ID as above
                 0,
                 simconnect::SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_SIM_FRAME,
+                0,
+                0,
+                0,
+                0
+            );
+
+            // Add aircraft type definition using ATC_MODEL and TITLE
+            conn.add_data_definition(
+                14,  // New ID for aircraft type
+                "TITLE",  // Primary aircraft type identifier
+                "String256",  // String data type
+                simconnect::SIMCONNECT_DATATYPE_SIMCONNECT_DATATYPE_STRING256,
+                0,
+                0.0
+            );
+
+            conn.request_data_on_sim_object(
+                14,  // Same ID as above
+                14,  // Same ID as above
+                0,
+                simconnect::SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE,  // Get once at start
+                0,
+                0,
+                0,
+                0
+            );
+
+            // Add a second attempt with ATC_MODEL as backup
+            conn.add_data_definition(
+                15,  // New ID for ATC model
+                "ATC MODEL",  // Backup aircraft type identifier
+                "String256",  // String data type
+                simconnect::SIMCONNECT_DATATYPE_SIMCONNECT_DATATYPE_STRING256,
+                0,
+                0.0
+            );
+
+            conn.request_data_on_sim_object(
+                15,  // Same ID as above
+                15,  // Same ID as above
+                0,
+                simconnect::SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE,  // Get once at start
                 0,
                 0,
                 0,
@@ -1052,6 +1097,66 @@ pub fn start_simconnect_data_collection(
                                     }
                                 }
                             },
+                            14 => { // Aircraft title data
+                                let data_ptr = std::ptr::addr_of!(data.dwData) as *const u8;
+                                let mut aircraft_title = String::new();
+                                
+                                // Safely read the string data
+                                let mut i = 0;
+                                while i < 256 {
+                                    let c = *data_ptr.offset(i);
+                                    if c == 0 {
+                                        break;
+                                    }
+                                    aircraft_title.push(c as char);
+                                    i += 1;
+                                }
+                                
+                                println!("[DEBUG] Aircraft TITLE detected: {}", aircraft_title);
+                                
+                                // Update flight state with aircraft type from title
+                                if !aircraft_title.is_empty() {
+                                    flight_state.aircraft_type = aircraft_title.clone();
+                                    
+                                    // Emit aircraft type event
+                                    let _ = window.emit("aircraft-type-changed", json!({
+                                        "type": aircraft_title
+                                    }));
+                                    
+                                    // Also emit regular simconnect data with updated aircraft type
+                                    let _ = window.emit("simconnect-data", flight_state.get_payload());
+                                }
+                            },
+                            15 => { // ATC model data
+                                let data_ptr = std::ptr::addr_of!(data.dwData) as *const u8;
+                                let mut atc_model = String::new();
+                                
+                                // Safely read the string data
+                                let mut i = 0;
+                                while i < 256 {
+                                    let c = *data_ptr.offset(i);
+                                    if c == 0 {
+                                        break;
+                                    }
+                                    atc_model.push(c as char);
+                                    i += 1;
+                                }
+                                
+                                println!("[DEBUG] ATC MODEL detected: {}", atc_model);
+                                
+                                // Only update if we don't already have a title and this isn't empty
+                                if flight_state.aircraft_type == "Unknown" && !atc_model.is_empty() {
+                                    flight_state.aircraft_type = atc_model.clone();
+                                    
+                                    // Emit aircraft type event
+                                    let _ = window.emit("aircraft-type-changed", json!({
+                                        "type": atc_model
+                                    }));
+                                    
+                                    // Also emit regular simconnect data with updated aircraft type
+                                    let _ = window.emit("simconnect-data", flight_state.get_payload());
+                                }
+                            },
                             _ => {
                                 // Only log unknown DefineIDs if we're in debug mode
                                 #[cfg(debug_assertions)]
@@ -1088,6 +1193,48 @@ pub fn start_simconnect_data_collection(
                                     if flight_state.last_request_was_attach { "ATTACH" } else { "DETACH" });
                             
                             let _ = window.emit("simconnect-data", flight_state.get_payload());
+                        }
+                    } else if event.uEventID == 7 { // Frame event
+                        // Periodically re-request aircraft type data (every 30 seconds)
+                        // This helps detect aircraft changes during a session
+                        static mut LAST_AIRCRAFT_CHECK: Option<std::time::Instant> = None;
+                        
+                        let now = std::time::Instant::now();
+                        let should_check = unsafe {
+                            match LAST_AIRCRAFT_CHECK {
+                                Some(last) if now.duration_since(last).as_secs() < 30 => false,
+                                _ => {
+                                    LAST_AIRCRAFT_CHECK = Some(now);
+                                    true
+                                }
+                            }
+                        };
+                        
+                        if should_check {
+                            println!("[DEBUG] Periodically checking aircraft type...");
+                            
+                            // Request the aircraft type data again
+                            conn.request_data_on_sim_object(
+                                14, // TITLE
+                                14,
+                                0,
+                                simconnect::SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE,
+                                0,
+                                0,
+                                0,
+                                0
+                            );
+                            
+                            conn.request_data_on_sim_object(
+                                15, // ATC MODEL
+                                15,
+                                0,
+                                simconnect::SIMCONNECT_PERIOD_SIMCONNECT_PERIOD_ONCE,
+                                0,
+                                0,
+                                0,
+                                0
+                            );
                         }
                     }
                 },

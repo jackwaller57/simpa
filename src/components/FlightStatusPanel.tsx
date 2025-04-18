@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React from 'react';
+import './FlightStatusPanel.css';
 
 interface FlightStatusPanelProps {
   flightState: {
@@ -14,245 +15,100 @@ interface FlightStatusPanelProps {
     jetwayMoving: boolean;
     jetwayState: number;
     wingLight: boolean;
+    aircraftType?: string;
   };
-  currentVolume: number;
-  masterVolume: number;
-  currentZone: string;
-  isPlaying: boolean;
-  currentAudioName: string;
-  currentAudioVolume: number;
-  cockpitDoorOpen: boolean;
-  cameraPosition: string;
   landingLights: boolean;
-  landingLightsOffCount: number;
-  hasDescendedThrough10k: boolean;
-  gsxBypassPin: boolean;
-  seatbeltSignCount: number;
-  touchdownData: {
-    normalVelocity: number;
-    bankDegrees: number;
-    pitchDegrees: number;
-    headingDegrees: number;
-    lateralVelocity: number;
-    longitudinalVelocity: number;
-  } | null;
-  onVolumeChange: (event: React.ChangeEvent<HTMLInputElement>) => void;
-  onResetSeatbeltCount?: () => void;
-  onToggleWingLight?: () => void;
-  onResetWingLight?: () => void;
-  isWingLightOverridden?: boolean;
+  onReset?: () => void;
+  onWingLightToggle?: () => void;
+  onLandingLightsToggle?: () => void;
 }
 
 const FlightStatusPanel: React.FC<FlightStatusPanelProps> = ({
   flightState,
-  currentVolume,
-  masterVolume,
-  currentZone,
-  isPlaying,
-  currentAudioName,
-  currentAudioVolume,
-  cockpitDoorOpen,
-  cameraPosition,
   landingLights,
-  landingLightsOffCount,
-  hasDescendedThrough10k,
-  gsxBypassPin,
-  seatbeltSignCount,
-  touchdownData,
-  onVolumeChange,
-  onResetSeatbeltCount,
-  onToggleWingLight,
-  onResetWingLight,
-  isWingLightOverridden
+  onReset,
+  onWingLightToggle,
+  onLandingLightsToggle
 }) => {
   return (
-    <div className="bg-gray-800 rounded-lg p-4 shadow-lg">
-      {/* Flight Status Section */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        <div className="flex items-center">
-          <span className="w-32 text-gray-400">View Type:</span>
-          <span className="text-blue-400">{flightState.cameraViewType}</span>
+    <div className="flight-status-panel">
+      <h3>Flight Status</h3>
+      
+      <div className="status-grid">
+        <div className="status-item">
+          <span className="status-label">Aircraft Type:</span>
+          <span className="status-value">{flightState.aircraftType || 'Unknown'}</span>
         </div>
-        <div className="flex items-center">
-          <span className="w-32 text-gray-400">Volume Level:</span>
-          <span className="text-blue-400">{Math.round(currentVolume)}%</span>
+        
+        <div className="status-item">
+          <span className="status-label">Heading:</span>
+          <span className="status-value">{flightState.heading.toFixed(1)}°</span>
         </div>
-        <div className="flex items-center">
-          <span className="w-32 text-gray-400">Master Volume:</span>
-          <div className="flex items-center gap-2">
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={masterVolume}
-              onChange={onVolumeChange}
-              className="w-24 h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-            />
-            <span className="text-blue-400">{masterVolume}%</span>
-          </div>
+        
+        <div className="status-item">
+          <span className="status-label">Speed:</span>
+          <span className="status-value">{flightState.speed.toFixed(1)} kts</span>
         </div>
-        <div className="flex items-center">
-          <span className="w-32 text-gray-400">Cockpit Door:</span>
-          <span className={`${cockpitDoorOpen ? 'text-green-400' : 'text-red-400'}`}>
-            {cockpitDoorOpen ? 'Open' : 'Closed'}
+        
+        <div className="status-item">
+          <span className="status-label">Altitude:</span>
+          <span className="status-value">
+            {flightState.altitude ? `${flightState.altitude.toFixed(0)} ft` : 'N/A'}
           </span>
         </div>
-        <div className="flex items-center">
-          <span className="w-32 text-gray-400">Camera Position:</span>
-          <span className="text-blue-400">{cameraPosition}</span>
-        </div>
-        <div className="flex items-center">
-          <span className="w-32 text-gray-400">Position X:</span>
-          <span className="text-blue-400">{flightState.xPosition.toFixed(2)}</span>
-        </div>
-        <div className="flex items-center">
-          <span className="w-32 text-gray-400">Position Y:</span>
-          <span className="text-blue-400">{flightState.yPosition.toFixed(2)}</span>
-        </div>
-        <div className="flex items-center">
-          <span className="w-32 text-gray-400">Position Z:</span>
-          <span className="text-blue-400">{flightState.zPosition.toFixed(2)}</span>
-        </div>
-        <div className="flex items-center">
-          <span className="w-32 text-gray-400">Altitude:</span>
-          <span className="text-blue-400">{flightState.altitude?.toFixed(0) ?? 'N/A'} ft</span>
-        </div>
-        <div className="flex items-center">
-          <span className="w-32 text-gray-400">Current Zone:</span>
-          <span className="text-blue-400">{currentZone}</span>
-        </div>
-        <div className="flex items-center">
-          <span className="w-32 text-gray-400">Audio Status:</span>
-          <span className="text-blue-400">
-            {isPlaying ? `Playing: ${currentAudioName}` : 'No audio playing'}
+        
+        <div className="status-item">
+          <span className="status-label">Beacon Light:</span>
+          <span className={`status-value ${flightState.beaconLight ? 'status-on' : 'status-off'}`}>
+            {flightState.beaconLight ? 'ON' : 'OFF'}
           </span>
         </div>
-        <div className="flex items-center">
-          <span className="w-32 text-gray-400">Audio Volume:</span>
-          <span className="text-blue-400">{Math.round(currentAudioVolume)}%</span>
-        </div>
-      </div>
-
-      {/* System Status Section */}
-      <div className="mt-4 pt-4 border-t border-gray-700">
-        <h3 className="text-lg font-semibold text-white mb-2">System Status</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          <div className="flex items-center">
-            <span className="w-32 text-gray-400">Landing Lights:</span>
-            <span className={landingLights ? 'text-green-400' : 'text-red-400'}>
-              {landingLights ? 'ON' : 'OFF'}
-            </span>
-          </div>
-          <div className="flex items-center">
-            <span className="w-32 text-gray-400">Lights Off Count:</span>
-            <span className="text-blue-400">{landingLightsOffCount}</span>
-          </div>
-          <div className="flex items-center">
-            <span className="w-32 text-gray-400">Descended 10k:</span>
-            <span className={hasDescendedThrough10k ? 'text-green-400' : 'text-red-400'}>
-              {hasDescendedThrough10k ? 'YES' : 'NO'}
-            </span>
-          </div>
-          <div className="flex items-center">
-            <span className="w-32 text-gray-400">GSX Bypass Pin:</span>
-            <span className={gsxBypassPin ? 'text-green-400' : 'text-red-400'}>
-              {gsxBypassPin ? 'INSERTED' : 'REMOVED'}
-            </span>
-          </div>
-          <div className="flex items-center">
-            <span className="w-32 text-gray-400">Beacon Light:</span>
-            <span className={flightState.beaconLight ? 'text-green-400' : 'text-red-400'}>
-              {flightState.beaconLight ? 'ON' : 'OFF'}
-            </span>
-          </div>
-          <div className="flex items-center">
-            <span className="w-32 text-gray-400">Wing Light:</span>
-            <span className={flightState.wingLight ? 'text-green-400' : 'text-red-400'}>
-              {flightState.wingLight ? 'ON' : 'OFF'} 
-              {isWingLightOverridden && <span className="text-yellow-400 ml-1">(Manual)</span>}
-            </span>
-            <div className="ml-2 flex space-x-1">
-              {onToggleWingLight && (
-                <button 
-                  onClick={onToggleWingLight}
-                  className="bg-gray-600 hover:bg-gray-500 text-white text-xs py-1 px-2 rounded"
-                  title="Toggle wing light"
-                >
-                  Toggle
-                </button>
-              )}
-              {isWingLightOverridden && onResetWingLight && (
-                <button 
-                  onClick={onResetWingLight}
-                  className="bg-blue-600 hover:bg-blue-500 text-white text-xs py-1 px-2 rounded"
-                  title="Reset to simulator state"
-                >
-                  Reset
-                </button>
-              )}
-            </div>
-          </div>
-          <div className="flex items-center">
-            <span className="w-32 text-gray-400">Seatbelt Sign:</span>
-            <span className={flightState.seatbeltSign ? 'text-green-400' : 'text-red-400'}>
-              {flightState.seatbeltSign ? 'ON' : 'OFF'}
-            </span>
-          </div>
-          <div className="flex items-center">
-            <span className="w-32 text-gray-400">Seatbelt Count:</span>
-            <span className="text-blue-400">{seatbeltSignCount}</span>
-            {onResetSeatbeltCount && (
-              <button 
-                onClick={onResetSeatbeltCount}
-                className="ml-2 bg-gray-600 hover:bg-gray-500 text-white text-xs py-1 px-2 rounded"
-                title="Reset seatbelt sign count"
-              >
-                Reset
-              </button>
-            )}
-          </div>
-          <div className="flex items-center">
-            <span className="w-32 text-gray-400">Jetway:</span>
-            <span className={flightState.jetwayMoving ? 'text-yellow-400' :
-                           flightState.jetwayState === 1 ? 'text-green-400' : 'text-red-400'}>
-              {flightState.jetwayMoving ? 'MOVING' :
-               flightState.jetwayState === 1 ? 'ATTACHED' : 'DETACHED'}
-            </span>
-          </div>
+        
+        <div className="status-item">
+          <span className="status-label">Wing Light:</span>
+          <span className={`status-value ${flightState.wingLight ? 'status-on' : 'status-off'}`}>
+            {flightState.wingLight ? 'ON' : 'OFF'}
+          </span>
+          {onWingLightToggle && (
+            <button className="control-button" onClick={onWingLightToggle}>
+              Toggle
+            </button>
+          )}
         </div>
 
-        {touchdownData && (
-          <div className="mt-4 pt-4 border-t border-gray-700">
-            <h3 className="text-lg font-semibold text-white mb-2">Touchdown Data</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div className="flex items-center">
-                <span className="w-32 text-gray-400">Vertical Speed:</span>
-                <span className="text-blue-400">{touchdownData.normalVelocity.toFixed(1)} ft/s</span>
-              </div>
-              <div className="flex items-center">
-                <span className="w-32 text-gray-400">Bank Angle:</span>
-                <span className="text-blue-400">{touchdownData.bankDegrees.toFixed(1)}°</span>
-              </div>
-              <div className="flex items-center">
-                <span className="w-32 text-gray-400">Pitch Angle:</span>
-                <span className="text-blue-400">{touchdownData.pitchDegrees.toFixed(1)}°</span>
-              </div>
-              <div className="flex items-center">
-                <span className="w-32 text-gray-400">Heading:</span>
-                <span className="text-blue-400">{touchdownData.headingDegrees.toFixed(1)}°</span>
-              </div>
-              <div className="flex items-center">
-                <span className="w-32 text-gray-400">Lateral Speed:</span>
-                <span className="text-blue-400">{touchdownData.lateralVelocity.toFixed(1)} ft/s</span>
-              </div>
-              <div className="flex items-center">
-                <span className="w-32 text-gray-400">Longitudinal Speed:</span>
-                <span className="text-blue-400">{touchdownData.longitudinalVelocity.toFixed(1)} ft/s</span>
-              </div>
-            </div>
-          </div>
-        )}
+        <div className="status-item">
+          <span className="status-label">Landing Lights:</span>
+          <span className={`status-value ${landingLights ? 'status-on' : 'status-off'}`}>
+            {landingLights ? 'ON' : 'OFF'}
+          </span>
+          {onLandingLightsToggle && (
+            <button className="control-button" onClick={onLandingLightsToggle}>
+              Toggle
+            </button>
+          )}
+        </div>
+        
+        <div className="status-item">
+          <span className="status-label">Seatbelt Sign:</span>
+          <span className={`status-value ${flightState.seatbeltSign ? 'status-on' : 'status-off'}`}>
+            {flightState.seatbeltSign ? 'ON' : 'OFF'}
+          </span>
+        </div>
+        
+        <div className="status-item">
+          <span className="status-label">Jetway:</span>
+          <span className="status-value">
+            {flightState.jetwayState ? 'Attached' : 'Detached'}
+            {flightState.jetwayMoving && <span className="moving-indicator"> (Moving)</span>}
+          </span>
+        </div>
       </div>
+      
+      {onReset && (
+        <button className="reset-button" onClick={onReset}>
+          Reset Status
+        </button>
+      )}
     </div>
   );
 };

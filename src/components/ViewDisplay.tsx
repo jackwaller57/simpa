@@ -1,28 +1,35 @@
-import { useEffect, useState } from 'react';
-import { listen } from '@tauri-apps/api/event';
+import React from 'react';
+import './ViewDisplay.css';
 
 interface ViewDisplayProps {
-  className?: string;
+  viewType: string;
+  jetwayState: string;
+  jetwayMoving: boolean;
 }
 
-export default function ViewDisplay({ className = '' }: ViewDisplayProps) {
-  const [currentView, setCurrentView] = useState<string>('');
-
-  useEffect(() => {
-    const unlisten = listen('view-changed', (event) => {
-      const payload = event.payload as { view: string };
-      setCurrentView(payload.view);
-    });
-
-    return () => {
-      unlisten.then(fn => fn());
-    };
-  }, []);
-
+const ViewDisplay: React.FC<ViewDisplayProps> = ({
+  viewType,
+  jetwayState,
+  jetwayMoving
+}) => {
   return (
-    <div className={`bg-gray-800 text-white p-2 rounded-lg ${className}`}>
-      <div className="text-sm font-semibold">Current View:</div>
-      <div className="text-lg">{currentView || 'Loading...'}</div>
+    <div className="view-display-container">
+      <h3>View Information</h3>
+      <div className="view-info-grid">
+        <div className="view-info-row">
+          <span className="view-info-label">View Type:</span>
+          <span className="view-info-value">{viewType}</span>
+        </div>
+        <div className="view-info-row">
+          <span className="view-info-label">Jetway:</span>
+          <span className="view-info-value">
+            {jetwayState}
+            {jetwayMoving && <span className="moving-indicator"> (Moving)</span>}
+          </span>
+        </div>
+      </div>
     </div>
   );
-} 
+};
+
+export default ViewDisplay; 

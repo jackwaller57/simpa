@@ -1,11 +1,183 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import './App.css';
 import { MainPage } from './pages/MainPage';
 import FlightStatusPanel from './components/FlightStatusPanel';
 import CameraPosition from './components/CameraPosition';
 import ViewDisplay from './components/ViewDisplay';
+import AircraftTypeSelector from './components/AircraftTypeSelector';
+import ConnectionControl from './components/ConnectionControl';
 import { getZoneFromPosition, getVolumeForZone } from './zoneFix';
+
+// Define aircraft configuration types
+interface ZoneThresholds {
+  start: number;
+  end: number;
+}
+
+interface AircraftZones {
+  outside: ZoneThresholds;
+  jetway: ZoneThresholds;
+  cabin: ZoneThresholds;
+  cockpit: ZoneThresholds;
+}
+
+interface AircraftConfig {
+  zones: AircraftZones;
+}
+
+type AircraftConfigs = {
+  [key: string]: AircraftConfig;
+};
+
+// Aircraft configurations for zone control
+const DEFAULT_AIRCRAFT_CONFIGS: AircraftConfigs = {
+  "A320": {
+    zones: {
+      outside: { start: -1.60, end: -1.60 },
+      jetway: { start: -12.0, end: -12.0 },
+      cabin: { start: -22.4, end: -22.4 },
+      cockpit: { start: -24.3, end: -24.3 }
+    }
+  },
+  "A319": {
+    zones: {
+      outside: { start: -1.55, end: -1.55 },
+      jetway: { start: -11.5, end: -11.5 },
+      cabin: { start: -20.0, end: -20.0 },
+      cockpit: { start: -22.0, end: -22.0 }
+    }
+  },
+  "A321": {
+    zones: {
+      outside: { start: -1.65, end: -1.65 },
+      jetway: { start: -12.5, end: -12.5 },
+      cabin: { start: -24.6, end: -24.6 },
+      cockpit: { start: -26.5, end: -26.5 }
+    }
+  },
+  "A350": {
+    zones: {
+      outside: { start: -1.80, end: -1.80 },
+      jetway: { start: -14.0, end: -14.0 },
+      cabin: { start: -28.0, end: -28.0 },
+      cockpit: { start: -30.0, end: -30.0 }
+    }
+  },
+  "A350-900": {
+    zones: {
+      outside: { start: -1.80, end: -1.80 },
+      jetway: { start: -14.0, end: -14.0 },
+      cabin: { start: -28.0, end: -28.0 },
+      cockpit: { start: -30.0, end: -30.0 }
+    }
+  },
+  "A350-1000": {
+    zones: {
+      outside: { start: -1.85, end: -1.85 },
+      jetway: { start: -15.0, end: -15.0 },
+      cabin: { start: -32.0, end: -32.0 },
+      cockpit: { start: -34.0, end: -34.0 }
+    }
+  },
+  "B737": {
+    zones: {
+      outside: { start: -1.40, end: -1.40 },
+      jetway: { start: -10.0, end: -10.0 },
+      cabin: { start: -20.0, end: -20.0 },
+      cockpit: { start: -22.0, end: -22.0 }
+    }
+  },
+  "B737-700": {
+    zones: {
+      outside: { start: -1.35, end: -1.35 },
+      jetway: { start: -9.5, end: -9.5 },
+      cabin: { start: -19.0, end: -19.0 },
+      cockpit: { start: -21.0, end: -21.0 }
+    }
+  },
+  "B737-800": {
+    zones: {
+      outside: { start: -1.40, end: -1.40 },
+      jetway: { start: -10.0, end: -10.0 },
+      cabin: { start: -21.5, end: -21.5 },
+      cockpit: { start: -23.5, end: -23.5 }
+    }
+  },
+  "B737-900": {
+    zones: {
+      outside: { start: -1.45, end: -1.45 },
+      jetway: { start: -10.5, end: -10.5 },
+      cabin: { start: -23.0, end: -23.0 },
+      cockpit: { start: -25.0, end: -25.0 }
+    }
+  },
+  "B787": {
+    zones: {
+      outside: { start: -1.75, end: -1.75 },
+      jetway: { start: -13.0, end: -13.0 },
+      cabin: { start: -26.0, end: -26.0 },
+      cockpit: { start: -28.0, end: -28.0 }
+    }
+  },
+  "B787-8": {
+    zones: {
+      outside: { start: -1.70, end: -1.70 },
+      jetway: { start: -12.5, end: -12.5 },
+      cabin: { start: -24.0, end: -24.0 },
+      cockpit: { start: -26.0, end: -26.0 }
+    }
+  },
+  "B787-9": {
+    zones: {
+      outside: { start: -1.75, end: -1.75 },
+      jetway: { start: -13.0, end: -13.0 },
+      cabin: { start: -26.0, end: -26.0 },
+      cockpit: { start: -28.0, end: -28.0 }
+    }
+  },
+  "B787-10": {
+    zones: {
+      outside: { start: -1.80, end: -1.80 },
+      jetway: { start: -13.5, end: -13.5 },
+      cabin: { start: -28.0, end: -28.0 },
+      cockpit: { start: -30.0, end: -30.0 }
+    }
+  },
+  "CRJ": {
+    zones: {
+      outside: { start: -1.20, end: -1.20 },
+      jetway: { start: -8.0, end: -8.0 },
+      cabin: { start: -16.0, end: -16.0 },
+      cockpit: { start: -18.0, end: -18.0 }
+    }
+  },
+  "E-Jet": {
+    zones: {
+      outside: { start: -1.30, end: -1.30 },
+      jetway: { start: -9.0, end: -9.0 },
+      cabin: { start: -18.0, end: -18.0 },
+      cockpit: { start: -20.0, end: -20.0 }
+    }
+  },
+  "B747": {
+    zones: {
+      outside: { start: -2.00, end: -2.00 },
+      jetway: { start: -15.0, end: -15.0 },
+      cabin: { start: -30.0, end: -30.0 },
+      cockpit: { start: -32.0, end: -32.0 }
+    }
+  },
+  "Custom": {
+    zones: {
+      outside: { start: -1.60, end: -1.60 },
+      jetway: { start: -12.0, end: -12.0 },
+      cabin: { start: -22.4, end: -22.4 },
+      cockpit: { start: -24.3, end: -24.3 }
+    }
+  }
+};
 
 interface FlightState {
   xPosition: number;
@@ -20,6 +192,7 @@ interface FlightState {
   jetwayMoving: boolean;
   jetwayState: number;
   wingLight: boolean;
+  aircraftType?: string; // Added aircraft type for auto-detection
 }
 
 interface CameraPositionPayload {
@@ -61,6 +234,15 @@ function App() {
   const [timeSinceLastUpdate, setTimeSinceLastUpdate] = useState(0);
   const currentTimeRef = useRef(Date.now());
   const [wingLightCount, setWingLightCount] = useState<number>(0);
+  // Aircraft selection states
+  const [selectedAircraftType, setSelectedAircraftType] = useState<string>(() => {
+    const saved = localStorage.getItem('selectedAircraftType');
+    return saved || "A320";
+  });
+  const [aircraftDetectionMode, setAircraftDetectionMode] = useState<string>(() => {
+    const saved = localStorage.getItem('aircraftDetectionMode');
+    return saved || "manual"; // 'auto' or 'manual'
+  });
   const [flightState, setFlightState] = useState<FlightState>({
     xPosition: 0,
     yPosition: 0,
@@ -129,8 +311,8 @@ function App() {
   const positionHistoryRef = useRef<number[]>([]);
   const lastUpdateTimeRef = useRef<number>(0);
   const MIN_UPDATE_INTERVAL = 1000; // Increased to 1 second to prevent rapid updates
-  const POSITION_THRESHOLD = 0.1; // Minimum position change threshold
-  const ZONE_CHANGE_THRESHOLD = 0.1; // Reduced from 0.3 to make zone changes more responsive
+  const POSITION_THRESHOLD = 0.05; // Changed from a higher value to be more sensitive
+  const ZONE_CHANGE_THRESHOLD = 0.3; // Increased from 0.1 to avoid zone flicker
   const lastJetbridgeUpdateRef = useRef<number>(0);
   const JETBRIDGE_UPDATE_INTERVAL = 5000; // Minimum time between jetbridge updates (5 seconds)
   const JETBRIDGE_POSITION_THRESHOLD = 2.0; // Minimum position change for jetbridge updates
@@ -144,7 +326,7 @@ function App() {
   const FADE_INTERVAL = FADE_DURATION / FADE_STEPS;
 
   // Add debounce constants
-  const VOLUME_DEBOUNCE_TIME = 250; // Reduced from 500ms to make volume changes more responsive
+  const VOLUME_DEBOUNCE_TIME = 500; // Increased from 250ms to 500ms for more stability
 
   // Add a ref to track audio playback state
   const isSeatbeltAudioPlayingRef = useRef<boolean>(false);
@@ -192,23 +374,49 @@ function App() {
   //   });
   // };
 
-  // Function to smoothly transition volume
-  const fadeVolume = (element: HTMLAudioElement, targetVolume: number) => {
+  // Improve the fadeVolume function for smoother transitions between zones
+  const fadeVolume = (element: HTMLAudioElement, targetVolume: number, duration = 1000) => {
+    // Don't attempt to fade if element is not available
+    if (!element) return;
+    
+    // Clear any existing fade intervals
+    if (fadeIntervalRef.current) {
+      clearInterval(fadeIntervalRef.current);
+      fadeIntervalRef.current = null;
+    }
+    
     const startVolume = element.volume;
-    const duration = 250; // 250ms fade duration
-    const steps = 10; // Number of steps in the fade
+    const volumeDelta = targetVolume - startVolume;
+    
+    // If no change or very minimal change, just set it directly
+    if (Math.abs(volumeDelta) < 0.01) {
+      element.volume = targetVolume;
+      return;
+    }
+    
+    // Log the volume transition
+    console.log(`Fading volume from ${startVolume.toFixed(2)} to ${targetVolume.toFixed(2)} over ${duration}ms`);
+    
+    // For zone transitions, use more steps for smoother fading
+    const steps = 20; // More steps = smoother transition
     const stepTime = duration / steps;
-    const volumeStep = (targetVolume - startVolume) / steps;
+    const volumeStep = volumeDelta / steps;
     let currentStep = 0;
 
-    const fadeInterval = setInterval(() => {
+    // Create and store the interval for cleanup
+    fadeIntervalRef.current = window.setInterval(() => {
       currentStep++;
       const newVolume = startVolume + (volumeStep * currentStep);
-      element.volume = Math.max(0, Math.min(1, newVolume)); // Ensure volume stays between 0 and 1
+      // Ensure volume is between 0 and 1
+      element.volume = Math.max(0, Math.min(1, newVolume)); 
 
       if (currentStep >= steps) {
-        clearInterval(fadeInterval);
+        if (fadeIntervalRef.current) {
+          clearInterval(fadeIntervalRef.current);
+          fadeIntervalRef.current = null;
+        }
         element.volume = targetVolume;
+        console.log(`Fade complete: Volume set to ${targetVolume.toFixed(2)}`);
       }
     }, stepTime);
   };
@@ -222,65 +430,48 @@ function App() {
   };
 
   // Function to determine current zone based on camera Z position
-  const getCurrentZone = (cameraZ: number): string => {
-    // Ensure we're using the actual camera Z position
-    const actualZ = cameraZ || lastCameraZRef.current || 0;
-    
-    // Get zone based on camera position 
-    let newZone = "";
-    // These values are based on camera position only
-    if (actualZ > -1.60) {
-      newZone = 'outside';
-    } else if (actualZ > -12.0) {
-      newZone = 'jetway';
-    } else if (actualZ > -22.4) {
-      newZone = 'cabin';
-    } else if (actualZ > -24.3) {
-      newZone = 'cockpit';
-    } else {
-      newZone = 'outside';
+  const getCurrentZone = (
+    cameraPosition: [number, number, number],
+    thresholds?: AircraftZones
+  ): string => {
+    if (!thresholds) {
+      console.log('getCurrentZone: No thresholds provided, defaulting to "outside"');
+      return "outside";
     }
+
+    const [x, y, z] = cameraPosition;
+    console.log(`getCurrentZone: Checking zone for position z=${z.toFixed(3)}`);
     
-    // Stability logic to prevent rapid zone changes
-    const now = Date.now();
-    const { lastZone, lastZoneZ, stableCounter, changeTime } = zoneStabilityRef.current;
+    // Debug values of all thresholds
+    console.log("ZONE THRESHOLDS:", {
+      outside: { start: thresholds.outside.start.toFixed(3) },
+      jetway: { start: thresholds.jetway.start.toFixed(3) },
+      cabin: { start: thresholds.cabin.start.toFixed(3) },
+      cockpit: { start: thresholds.cockpit.start.toFixed(3) }
+    });
     
-    // If zone is different from last zone
-    if (newZone !== lastZone) {
-      // Check if the position change is significant enough to warrant a zone change
-      if (Math.abs(actualZ - lastZoneZ) < ZONE_CHANGE_THRESHOLD) {
-        // Too small a change, probably noise - keep the last zone
-        console.log(`Ignoring small zone change from ${lastZone} to ${newZone}. Z diff: ${Math.abs(actualZ - lastZoneZ)}`);
-        return lastZone;
-      }
-      
-      // Check if enough time has passed since the last zone change
-      if (now - changeTime < 500) { // Reduced from 3000ms to 500ms
-        // Too soon since last change, keep the last zone to prevent rapid toggling
-        console.log(`Ignoring rapid zone change from ${lastZone} to ${newZone}. Time since last change: ${now - changeTime}ms`);
-        return lastZone;
-      }
-      
-      // This looks like a legitimate zone change, update the ref
-      console.log(`Zone change from ${lastZone} to ${newZone} at Z: ${actualZ}`);
-      zoneStabilityRef.current = {
-        lastZone: newZone,
-        lastZoneZ: actualZ,
-        stableCounter: 0,
-        changeTime: now
-      };
-      
-      return newZone;
+    // Check exact threshold conditions to diagnose issues
+    console.log("ZONE CONDITIONS:", {
+      cockpit: `z(${z.toFixed(3)}) <= cockpit.start(${thresholds.cockpit.start.toFixed(3)}) = ${z <= thresholds.cockpit.start}`,
+      cabin: `z(${z.toFixed(3)}) <= cabin.start(${thresholds.cabin.start.toFixed(3)}) = ${z <= thresholds.cabin.start}`,
+      jetway: `z(${z.toFixed(3)}) <= jetway.start(${thresholds.jetway.start.toFixed(3)}) = ${z <= thresholds.jetway.start}`,
+      outside: `z(${z.toFixed(3)}) > jetway.start(${thresholds.jetway.start.toFixed(3)}) = ${z > thresholds.jetway.start}`
+    });
+    
+    // Note: Z is negative and smaller numbers are further inside the aircraft
+    // Therefore, we need to check from inside out (cockpit first, then cabin, etc.)
+    if (z <= thresholds.cockpit.start) {
+      console.log(`getCurrentZone: In COCKPIT zone (z=${z.toFixed(3)} <= cockpit.start=${thresholds.cockpit.start.toFixed(3)})`);
+      return "cockpit";
+    } else if (z <= thresholds.cabin.start) {
+      console.log(`getCurrentZone: In CABIN zone (z=${z.toFixed(3)} <= cabin.start=${thresholds.cabin.start.toFixed(3)})`);
+      return "cabin";
+    } else if (z <= thresholds.jetway.start) {
+      console.log(`getCurrentZone: In JETWAY zone (z=${z.toFixed(3)} <= jetway.start=${thresholds.jetway.start.toFixed(3)})`);
+      return "jetway";
     } else {
-      // Same zone as before, increment stability counter
-      zoneStabilityRef.current.stableCounter++;
-      
-      // Update the last Z position if we've been stable for a while
-      if (stableCounter > 5) { // Reduced from 10 to 5 for faster updates
-        zoneStabilityRef.current.lastZoneZ = actualZ;
-      }
-      
-      return lastZone;
+      console.log(`getCurrentZone: In OUTSIDE zone (z=${z.toFixed(3)} > jetway.start=${thresholds.jetway.start.toFixed(3)})`);
+      return "outside";
     }
   };
 
@@ -296,67 +487,169 @@ function App() {
     }
   };
 
-  // Function to update all audio volumes
+  // Fix NodeJS namespace by using number instead
+  // Add a reference for the last zone update time
+  const lastZoneUpdateTimeRef = useRef<number>(Date.now());
+  // Add a timeout reference for zone monitoring
+  const zoneMonitorTimeoutRef = useRef<number | null>(null);
+  // Add a constant for zone recalculation timeout (force check every 2 seconds)
+  const ZONE_RECALCULATION_TIMEOUT = 2000;
+
+  // Add a zone monitoring function to ensure zones are updated periodically
+  const monitorZoneDetection = () => {
+    // Clear any existing monitor
+    if (zoneMonitorTimeoutRef.current) {
+      window.clearTimeout(zoneMonitorTimeoutRef.current);
+    }
+    
+    // Set up a new monitor
+    zoneMonitorTimeoutRef.current = window.setTimeout(() => {
+      const now = Date.now();
+      const timeSinceLastUpdate = now - lastZoneUpdateTimeRef.current;
+      
+      // If it's been too long since the last zone update, force a recalculation
+      if (timeSinceLastUpdate > ZONE_RECALCULATION_TIMEOUT) {
+        console.log(`ZONE MONITOR: ${timeSinceLastUpdate}ms since last update, forcing recalculation`);
+        // Force a zone update by temporarily resetting position tracking
+        const originalLastPosition = lastZPositionRef.current;
+        lastZPositionRef.current = null;
+        updateAllAudioVolumes();
+        // Restore original position after forced update
+        lastZPositionRef.current = originalLastPosition;
+      }
+      
+      // Continue monitoring
+      monitorZoneDetection();
+    }, ZONE_RECALCULATION_TIMEOUT);
+  };
+
+  // Start monitoring in a useEffect
+  useEffect(() => {
+    console.log("Starting zone detection monitoring");
+    monitorZoneDetection();
+    
+    return () => {
+      console.log("Stopping zone detection monitoring");
+      if (zoneMonitorTimeoutRef.current) {
+        window.clearTimeout(zoneMonitorTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Modify updateAllAudioVolumes to update the lastZoneUpdateTimeRef
   const updateAllAudioVolumes = () => {
     const now = Date.now();
     if (now - lastVolumeUpdateRef.current < VOLUME_DEBOUNCE_TIME) {
-      console.log('Skipping volume update - too soon since last update');
-      return; // Skip update if too soon
+      // Skip update if too soon since last update
+      return;
     }
-    lastVolumeUpdateRef.current = now;
 
     // Get the current Z position, prioritizing the most recent value
     const currentZ = flightState.zPosition || lastCameraZRef.current || 0;
-    console.log('Current Z position for volume update:', currentZ);
     
-    // Only update if position has changed significantly
-    if (lastZPositionRef.current !== null && 
-        Math.abs(currentZ - lastZPositionRef.current) < POSITION_THRESHOLD) {
-      console.log('Skipping volume update - position change too small');
-      return;
+    console.log(`updateAllAudioVolumes: Current Z position = ${currentZ}, Last Z = ${lastZPositionRef.current ?? 'null'}`);
+    
+    // Always update when first called (lastZPositionRef is null)
+    const isFirstUpdate = lastZPositionRef.current === null;
+    
+    // Check if position has changed significantly or this is first update
+    // Skip this check in debug mode
+    if (!isFirstUpdate && !debugMode) {
+      const lastZ = lastZPositionRef.current || 0; // Use 0 as fallback if null
+      const positionDelta = Math.abs(currentZ - lastZ);
+      if (positionDelta < POSITION_THRESHOLD) {
+        console.log(`updateAllAudioVolumes: Position change too small (${positionDelta.toFixed(5)}), skipping update`);
+        return; // Skip update - position change too small
+      }
+      console.log(`Position change detected: ${lastZ.toFixed(5)} -> ${currentZ.toFixed(5)}, delta: ${positionDelta.toFixed(5)}`);
+    } else if (debugMode) {
+      console.log(`DEBUG MODE: Processing all position updates regardless of threshold`);
+    } else {
+      console.log(`First position update, using Z = ${currentZ.toFixed(5)}`);
     }
     
-    const zone = getCurrentZone(currentZ);
-    const baseVolume = getZoneVolume(zone);
-    const logVolume = toLogVolume(baseVolume * 100);
-    const finalVolume = (masterVolume / 100) * logVolume;
+    // Update last update time since we're proceeding with the update
+    lastVolumeUpdateRef.current = now;
+    
+    // Get the current aircraft config based on selected type
+    const currentAircraftConfig = selectedAircraftType ? 
+      getAircraftConfigs()[selectedAircraftType] : null;
+    
+    console.log(`updateAllAudioVolumes: Using aircraft config for ${selectedAircraftType}:`, 
+      currentAircraftConfig ? JSON.stringify(currentAircraftConfig.zones) : 'No config found');
+    
+    // Get current zone from position using the aircraft-specific thresholds
+    const zone = currentAircraftConfig ? 
+      getCurrentZone([0, 0, currentZ], currentAircraftConfig.zones) : 
+      getZoneFromPosition(currentZ);
+    
+    // Check if zone changed from last known zone
+    const zoneChanged = zone !== currentZoneRef.current;
+    if (zoneChanged) {
+      console.log(`ZONE CHANGED from ${currentZoneRef.current || 'unknown'} to ${zone}`);
+      
+      // Use a longer fade duration when zones change for smoother transition
+      const zoneFadeDuration = 1500; // 1.5 seconds for zone transitions
+      
+      const baseVolume = getZoneVolume(zone);
+      const logVolume = toLogVolume(baseVolume * 100);
+      const finalVolume = (masterVolume / 100) * logVolume;
+      
+      // Update all audio elements with extra-smooth transition for zone changes
+      const updateVolumeWithZoneFade = (ref: React.MutableRefObject<HTMLAudioElement | null>, name: string) => {
+        if (ref.current) {
+          fadeVolume(ref.current, finalVolume, zoneFadeDuration);
+        }
+      };
+      
+      // Update all audio elements with the longer fade
+      updateVolumeWithZoneFade(boardingMusicRef, 'boarding music');
+      updateVolumeWithZoneFade(welcomeAboardRef, 'welcome aboard');
+      updateVolumeWithZoneFade(doorsAutoRef, 'doors auto');
+      updateVolumeWithZoneFade(tenKFeetRef, '10k feet');
+      updateVolumeWithZoneFade(arriveSoonRef, 'arrive soon');
+      updateVolumeWithZoneFade(landingSoonRef, 'landing soon');
+      updateVolumeWithZoneFade(weveArrivedRef, 'weve arrived');
+      updateVolumeWithZoneFade(almostReadyRef, 'almost ready');
+      updateVolumeWithZoneFade(seatsForDepartureRef, 'seats for departure');
+      updateVolumeWithZoneFade(safetyVideoRef, 'safety video');
+      updateVolumeWithZoneFade(fastenSeatbeltRef, 'fasten seatbelt');
+    } else {
+      // For non-zone changes, use the standard fade for minor adjustments
+      const baseVolume = getZoneVolume(zone);
+      const logVolume = toLogVolume(baseVolume * 100);
+      const finalVolume = (masterVolume / 100) * logVolume;
+      
+      // Update all audio elements with normal short fade for position adjustments
+      const updateVolume = (ref: React.MutableRefObject<HTMLAudioElement | null>, name: string) => {
+        if (ref.current) {
+          fadeVolume(ref.current, finalVolume, 250); // Use shorter duration for same-zone adjustments
+        }
+      };
+      
+      // Update all audio elements with shorter fade
+      updateVolume(boardingMusicRef, 'boarding music');
+      updateVolume(welcomeAboardRef, 'welcome aboard');
+      updateVolume(doorsAutoRef, 'doors auto');
+      updateVolume(tenKFeetRef, '10k feet');
+      updateVolume(arriveSoonRef, 'arrive soon');
+      updateVolume(landingSoonRef, 'landing soon');
+      updateVolume(weveArrivedRef, 'weve arrived');
+      updateVolume(almostReadyRef, 'almost ready');
+      updateVolume(seatsForDepartureRef, 'seats for departure');
+      updateVolume(safetyVideoRef, 'safety video');
+      updateVolume(fastenSeatbeltRef, 'fasten seatbelt');
+    }
 
-    console.log('Volume calculation:', {
-      currentZ,
-      zone,
-      baseVolume,
-      logVolume,
-      finalVolume,
-      masterVolume
-    });
-
-    // Update all audio elements with smooth transition
-    const updateVolume = (ref: React.MutableRefObject<HTMLAudioElement | null>, name: string) => {
-      if (ref.current) {
-        console.log(`Updating ${name} volume to:`, finalVolume);
-        fadeVolume(ref.current, finalVolume);
-      }
-    };
-
-    // Update all audio elements including doors auto
-    updateVolume(boardingMusicRef, 'boarding music');
-    updateVolume(welcomeAboardRef, 'welcome aboard');
-    updateVolume(doorsAutoRef, 'doors auto');
-    updateVolume(tenKFeetRef, '10k feet');
-    updateVolume(arriveSoonRef, 'arrive soon');
-    updateVolume(landingSoonRef, 'landing soon');
-    updateVolume(weveArrivedRef, 'weve arrived');
-    updateVolume(almostReadyRef, 'almost ready');
-    updateVolume(seatsForDepartureRef, 'seats for departure');
-    updateVolume(safetyVideoRef, 'safety video');
-    updateVolume(fastenSeatbeltRef, 'fasten seatbelt');
-
-    // Update volume indicator (show linear value for user)
-    setCurrentVolume(baseVolume * 100);
+    // Update volume indicator and zone (show linear value for user)
+    setCurrentVolume(getZoneVolume(zone) * 100);
     setCurrentZone(zone);
 
-    // Update camera Z position and timestamp
-    lastCameraZRef.current = currentZ;
+    // Update timestamp of last zone calculation
+    lastZoneUpdateTimeRef.current = now;
+
+    // Store current Z position and zone
+    lastZPositionRef.current = currentZ;
     currentZoneRef.current = zone;
   };
 
@@ -373,7 +666,7 @@ function App() {
       });
 
       const currentZ = flightState.zPosition || lastCameraZRef.current || 0;
-      const zone = getCurrentZone(currentZ);
+      const zone = getCurrentZone([currentZ, 0, 0]);
       const baseVolume = getZoneVolume(zone);
       const logVolume = toLogVolume(baseVolume * 100);
       const positionVolume = (masterVolume / 100) * logVolume;
@@ -480,7 +773,7 @@ function App() {
           
           // Set safety video volume based on current zone
           const currentZ = flightState.zPosition || lastCameraZRef.current || 0;
-          const zone = getCurrentZone(currentZ);
+          const zone = getCurrentZone([currentZ, 0, 0]);
           const baseVolume = getZoneVolume(zone);
           const logVolume = toLogVolume(baseVolume * 100);
           const positionVolume = (masterVolume / 100) * logVolume;
@@ -560,7 +853,7 @@ function App() {
             console.log('Conditions met! Playing "We\'ve arrived" announcement');
             if (weveArrivedRef.current) {
               const currentZ = flightState.zPosition || lastCameraZRef.current || 0;
-              const zone = getCurrentZone(currentZ);
+              const zone = getCurrentZone([currentZ, 0, 0]);
               const baseVolume = getZoneVolume(zone);
               const logVolume = toLogVolume(baseVolume * 100);
               const positionVolume = (masterVolume / 100) * logVolume;
@@ -720,7 +1013,7 @@ function App() {
     
     // Get current zone and calculate proper volume
     const currentZ = flightState.zPosition || lastCameraZRef.current || 0;
-    const zone = getCurrentZone(currentZ);
+    const zone = getCurrentZone([currentZ, 0, 0]);
     const baseVolume = getZoneVolume(zone);
     const logVolume = toLogVolume(baseVolume * 100);
     const positionVolume = (masterVolume / 100) * logVolume;
@@ -881,7 +1174,7 @@ function App() {
             
             // Set reasonable volume levels
             const currentZ = flightState.zPosition || lastCameraZRef.current || 0;
-            const zone = getCurrentZone(currentZ);
+            const zone = getCurrentZone([currentZ, 0, 0]);
             const baseVolume = getZoneVolume(zone);
             const logVolume = toLogVolume(baseVolume * 100);
             const videoVolume = (masterVolume / 100) * logVolume;
@@ -1059,18 +1352,52 @@ function App() {
         return;
       }
 
-      const data = event.payload as { x: number, y: number, z: number, isExternal: boolean };
-      // Update camera position state
-      setFlightState(prevState => ({
-        ...prevState,
-        xPosition: data.x,
-        yPosition: data.y,
-        zPosition: data.z,
-        cameraViewType: data.isExternal ? 'external' : 'internal'
-      }));
+      const data = event.payload as CameraPositionPayload;
+      console.log('Camera position event received:', {
+        position: data.position,
+        viewType: data.viewType,
+        x: data.xPosition,
+        y: data.yPosition,
+        z: data.zPosition,
+      });
       
-      // Update camera position ref
-      lastCameraZRef.current = data.z;
+      // Update camera position tracking
+      if (data.position) {
+        setCameraPosition(data.position);
+      }
+      
+      // Skip processing if zPosition is undefined
+      if (typeof data.zPosition === 'undefined') {
+        console.warn('Received camera position event with undefined zPosition');
+        return;
+      }
+
+      const newZPosition = data.zPosition;
+      const previousZPosition = lastCameraZRef.current || 0;
+      const positionDelta = Math.abs(newZPosition - previousZPosition);
+      
+      // Only update if position has changed significantly
+      if (positionDelta >= POSITION_THRESHOLD) {
+        console.log(`Significant camera position event: Z ${previousZPosition} -> ${newZPosition}, delta: ${positionDelta}`);
+        
+        // Update camera position state
+        setFlightState(prevState => ({
+          ...prevState,
+          xPosition: data.xPosition ?? prevState.xPosition,
+          yPosition: data.yPosition ?? prevState.yPosition,
+          zPosition: newZPosition,
+          cameraViewType: data.viewType
+        }));
+        
+        // Update camera position ref
+        lastCameraZRef.current = data.zPosition;
+        
+        // Don't need to call updateAllAudioVolumes here as it will be triggered 
+        // by the flightState update
+      } else {
+        // Position change too small, ignore it
+        console.log(`Ignoring small camera position event: Z ${previousZPosition} -> ${newZPosition}, delta: ${positionDelta}`);
+      }
     } catch (error) {
       console.error('Error handling camera position event:', error);
     }
@@ -1289,14 +1616,19 @@ function App() {
       }
     });
     
-    // Debug other events
-    const unsubscribeDebug = listen('*', (event) => {
-      // Filter out common events to avoid noise
-      if (!event.event.startsWith('tauri://') && 
-          event.event !== 'simconnect-data' &&
-          !['window-resized', 'window-moved', 'window-focus'].includes(event.event)) {
-        console.log(`Received event: ${event.event}`, event);
-      }
+    // Debug other events - remove the wildcard listener since it's causing issues
+    // const unsubscribeDebug = listen('*', (event) => {
+    //   // Filter out common events to avoid noise
+    //   if (!event.event.startsWith('tauri://') && 
+    //       event.event !== 'simconnect-data' &&
+    //       !['window-resized', 'window-moved', 'window-focus'].includes(event.event)) {
+    //     console.log(`Received event: ${event.event}`, event);
+    //   }
+    // });
+
+    // Replace with a specific listener for unknown events
+    const unsubscribeDebug = listen('unknown-event', (event) => {
+      console.log(`Received unknown event:`, event);
     });
     
     // Cleanup
@@ -1350,7 +1682,8 @@ function App() {
         touchdownLateralVelocity?: number,
         touchdownLongitudinalVelocity?: number,
         gsxBypassPin?: boolean,
-        wingLight?: boolean
+        wingLight?: boolean,
+        aircraftType?: string // Added for aircraft detection
       };
       
       // Enhanced debugging for beacon light and seatbelt sign properties
@@ -1394,7 +1727,7 @@ function App() {
             if (tenKFeetRef.current) {
               console.log('Playing 10k feet announcement');
               const currentZ = flightState.zPosition || lastCameraZRef.current || 0;
-              const zone = getCurrentZone(currentZ);
+              const zone = getCurrentZone([currentZ, 0, 0]);
               const baseVolume = getZoneVolume(zone);
               const logVolume = toLogVolume(baseVolume * 100);
               const positionVolume = (masterVolume / 100) * logVolume;
@@ -1424,7 +1757,7 @@ function App() {
             if (arriveSoonRef.current) {
               console.log('Playing arrive soon announcement');
               const currentZ = flightState.zPosition || lastCameraZRef.current || 0;
-              const zone = getCurrentZone(currentZ);
+              const zone = getCurrentZone([currentZ, 0, 0]);
               const baseVolume = getZoneVolume(zone);
               const logVolume = toLogVolume(baseVolume * 100);
               const positionVolume = (masterVolume / 100) * logVolume;
@@ -1461,7 +1794,7 @@ function App() {
               if (landingSoonRef.current) {
                 console.log('Playing landing soon announcement');
                 const currentZ = flightState.zPosition || lastCameraZRef.current || 0;
-                const zone = getCurrentZone(currentZ);
+                const zone = getCurrentZone([currentZ, 0, 0]);
                 const baseVolume = getZoneVolume(zone);
                 const logVolume = toLogVolume(baseVolume * 100);
                 const positionVolume = (masterVolume / 100) * logVolume;
@@ -1499,25 +1832,39 @@ function App() {
       
       // Handle camera position updates
       if (typeof data.zPosition === 'number' && !isNaN(data.zPosition)) {
-        console.log('Camera Z position updated:', data.zPosition);
-        setFlightState(prev => ({
-          ...prev,
-          xPosition: data.xPosition ?? prev.xPosition,
-          yPosition: data.yPosition ?? prev.yPosition,
-          zPosition: data.zPosition ?? prev.zPosition,
-          speed: 0, // Default speed
-          heading: 0, // Default heading
-          altitude: data.alt ?? prev.altitude,
-          cameraViewType: data.cameraViewType ?? prev.cameraViewType,
-          beaconLight: data.beaconLight ?? prev.beaconLight,
-          seatbeltSign: data.seatbeltSign ?? prev.seatbeltSign,
-          jetwayMoving: data.jetwayMoving ?? prev.jetwayMoving,
-          jetwayState: data.jetwayState ? 1 : 0,
-          wingLight: data.wingLight ?? prev.wingLight
-        }));
+        const newZPosition = data.zPosition;
+        const previousZPosition = lastCameraZRef.current || 0;
+        const positionDelta = Math.abs(newZPosition - previousZPosition);
         
-        lastCameraZRef.current = data.zPosition;
-        updateAllAudioVolumes();
+        // Only update if position has changed significantly
+        if (positionDelta >= POSITION_THRESHOLD) {
+          console.log(`Significant camera Z position change: ${previousZPosition} -> ${newZPosition}, delta: ${positionDelta}`);
+          
+          setFlightState(prevState => ({
+            ...prevState,
+            xPosition: data.xPosition ?? prevState.xPosition,
+            yPosition: data.yPosition ?? prevState.yPosition,
+            zPosition: newZPosition,
+            speed: 0, // Default speed
+            heading: 0, // Default heading
+            altitude: data.alt ?? prevState.altitude,
+            cameraViewType: data.cameraViewType ?? prevState.cameraViewType,
+            beaconLight: data.beaconLight ?? prevState.beaconLight,
+            seatbeltSign: data.seatbeltSign ?? prevState.seatbeltSign,
+            jetwayMoving: data.jetwayMoving ?? prevState.jetwayMoving,
+            jetwayState: data.jetwayState ? 1 : 0,
+            wingLight: data.wingLight ?? prevState.wingLight
+          }));
+          
+          // Update both position references to maintain consistency
+          lastCameraZRef.current = newZPosition;
+          
+          // Call updateAllAudioVolumes which will do its own additional checks
+          updateAllAudioVolumes();
+        } else {
+          // Position change too small, ignore it to avoid UI flicker
+          console.log(`Ignoring small camera Z position change: ${previousZPosition} -> ${newZPosition}, delta: ${positionDelta}`);
+        }
       }
       
       // Handle jetway state changes
@@ -1605,7 +1952,7 @@ function App() {
             
             // Set safety video volume based on current zone
             const currentZ = flightState.zPosition || lastCameraZRef.current || 0;
-            const zone = getCurrentZone(currentZ);
+            const zone = getCurrentZone([currentZ, 0, 0]);
             const baseVolume = getZoneVolume(zone);
             const logVolume = toLogVolume(baseVolume * 100);
             const positionVolume = (masterVolume / 100) * logVolume;
@@ -1686,6 +2033,117 @@ function App() {
             console.log('Playing "We\'ve arrived" announcement after touchdown');
             handleAudioEvent({ name: 'weve-arrived', action: 'play' });
           }
+        }
+      }
+
+      // Handle aircraft type detection
+      if (data.aircraftType && data.aircraftType !== flightState.aircraftType) {
+        console.log(`Aircraft type detected: ${data.aircraftType}`);
+        
+        // Update the flight state with the detected aircraft type
+        setFlightState(prevState => ({
+          ...prevState,
+          aircraftType: data.aircraftType
+        }));
+        
+        // If in auto-detection mode, attempt to select appropriate aircraft config
+        if (aircraftDetectionMode === 'auto') {
+          // Try direct match first
+          const aircraftConfigs = getAircraftConfigs();
+          if (aircraftConfigs[data.aircraftType]) {
+            console.log(`Found exact match for aircraft: ${data.aircraftType}`);
+            setSelectedAircraftType(data.aircraftType);
+            localStorage.setItem('selectedAircraftType', data.aircraftType);
+          } else {
+            // Try fuzzy matching based on aircraft type name
+            const typeLC = data.aircraftType.toLowerCase();
+            
+            // A320 family detection with specific variants
+            if (typeLC.includes('a319')) {
+              console.log('Detected Airbus A319 aircraft');
+              setSelectedAircraftType('A319');
+              localStorage.setItem('selectedAircraftType', 'A319');
+            } else if (typeLC.includes('a321')) {
+              console.log('Detected Airbus A321 aircraft');
+              setSelectedAircraftType('A321');
+              localStorage.setItem('selectedAircraftType', 'A321');
+            } else if (typeLC.includes('a320')) {
+              console.log('Detected Airbus A320 aircraft');
+              setSelectedAircraftType('A320');
+              localStorage.setItem('selectedAircraftType', 'A320');
+            }
+            
+            // A350 family detection
+            else if (typeLC.includes('a350-1000')) {
+              console.log('Detected Airbus A350-1000 aircraft');
+              setSelectedAircraftType('A350-1000');
+              localStorage.setItem('selectedAircraftType', 'A350-1000');
+            } else if (typeLC.includes('a350-900')) {
+              console.log('Detected Airbus A350-900 aircraft');
+              setSelectedAircraftType('A350-900');
+              localStorage.setItem('selectedAircraftType', 'A350-900');
+            } else if (typeLC.includes('a350')) {
+              console.log('Detected Airbus A350 family aircraft (generic)');
+              setSelectedAircraftType('A350');
+              localStorage.setItem('selectedAircraftType', 'A350');
+            }
+            
+            // 737 family detection with specific variants
+            else if (typeLC.includes('737-700')) {
+              console.log('Detected Boeing 737-700 aircraft');
+              setSelectedAircraftType('B737-700');
+              localStorage.setItem('selectedAircraftType', 'B737-700');
+            } else if (typeLC.includes('737-800')) {
+              console.log('Detected Boeing 737-800 aircraft');
+              setSelectedAircraftType('B737-800');
+              localStorage.setItem('selectedAircraftType', 'B737-800');
+            } else if (typeLC.includes('737-900')) {
+              console.log('Detected Boeing 737-900 aircraft');
+              setSelectedAircraftType('B737-900');
+              localStorage.setItem('selectedAircraftType', 'B737-900');
+            } else if (typeLC.includes('737')) {
+              console.log('Detected Boeing 737 family aircraft (generic)');
+              setSelectedAircraftType('B737');
+              localStorage.setItem('selectedAircraftType', 'B737');
+            }
+            
+            // 787 family detection
+            else if (typeLC.includes('787-8')) {
+              console.log('Detected Boeing 787-8 aircraft');
+              setSelectedAircraftType('B787-8');
+              localStorage.setItem('selectedAircraftType', 'B787-8');
+            } else if (typeLC.includes('787-9')) {
+              console.log('Detected Boeing 787-9 aircraft');
+              setSelectedAircraftType('B787-9');
+              localStorage.setItem('selectedAircraftType', 'B787-9');
+            } else if (typeLC.includes('787-10')) {
+              console.log('Detected Boeing 787-10 aircraft');
+              setSelectedAircraftType('B787-10');
+              localStorage.setItem('selectedAircraftType', 'B787-10');
+            } else if (typeLC.includes('787') || typeLC.includes('dreamliner')) {
+              console.log('Detected Boeing 787 family aircraft (generic)');
+              setSelectedAircraftType('B787');
+              localStorage.setItem('selectedAircraftType', 'B787');
+            }
+            
+            // Other aircraft families
+            else if (typeLC.includes('crj')) {
+              console.log('Detected CRJ family aircraft');
+              setSelectedAircraftType('CRJ');
+              localStorage.setItem('selectedAircraftType', 'CRJ');
+            } else if (typeLC.includes('embraer') || typeLC.includes('e-jet') || 
+                     typeLC.includes('e170') || typeLC.includes('e190')) {
+              console.log('Detected Embraer family aircraft');
+              setSelectedAircraftType('E-Jet');
+              localStorage.setItem('selectedAircraftType', 'E-Jet');
+            } else if (typeLC.includes('747')) {
+              console.log('Detected Boeing 747 aircraft');
+              setSelectedAircraftType('B747');
+              localStorage.setItem('selectedAircraftType', 'B747');
+            }
+          }
+        } else {
+          console.log('Aircraft auto-detection disabled, using manually selected aircraft type');
         }
       }
     } catch (error) {
@@ -2186,7 +2644,7 @@ function App() {
             
             // Set safety video volume based on current zone
             const currentZ = flightState.zPosition || lastCameraZRef.current || 0;
-            const zone = getCurrentZone(currentZ);
+            const zone = getCurrentZone([currentZ, 0, 0]);
             const baseVolume = getZoneVolume(zone);
             const logVolume = toLogVolume(baseVolume * 100);
             const positionVolume = (masterVolume / 100) * logVolume;
@@ -2316,40 +2774,349 @@ function App() {
     }
   };
 
+  // Add handler for aircraft type change events
+  const handleAircraftTypeEvent = (event: any) => {
+    const aircraftType = event.payload.type;
+    console.log(`Aircraft type event received: ${aircraftType}`);
+    
+    setFlightState(prev => ({
+      ...prev,
+      aircraftType: aircraftType
+    }));
+    
+    // If in auto mode, handle automatic aircraft type selection
+    if (aircraftDetectionMode === 'auto' && aircraftType) {
+      // Try direct match first
+      const aircraftConfigs = getAircraftConfigs();
+      if (aircraftConfigs[aircraftType]) {
+        console.log(`Found exact match for aircraft: ${aircraftType}`);
+        setSelectedAircraftType(aircraftType);
+        localStorage.setItem('selectedAircraftType', aircraftType);
+      } else {
+        // Try fuzzy matching based on aircraft type name
+        const typeLC = aircraftType.toLowerCase();
+        
+        if (typeLC.includes('a320') || typeLC.includes('a319') || typeLC.includes('a321')) {
+          setSelectedAircraftType('A320');
+          localStorage.setItem('selectedAircraftType', 'A320');
+        } else if (typeLC.includes('737')) {
+          setSelectedAircraftType('B737');
+          localStorage.setItem('selectedAircraftType', 'B737');
+        } else if (typeLC.includes('crj')) {
+          setSelectedAircraftType('CRJ');
+          localStorage.setItem('selectedAircraftType', 'CRJ');
+        } else if (typeLC.includes('embraer') || typeLC.includes('e-jet') || 
+                 typeLC.includes('e170') || typeLC.includes('e190')) {
+          setSelectedAircraftType('E-Jet');
+          localStorage.setItem('selectedAircraftType', 'E-Jet');
+        } else if (typeLC.includes('747')) {
+          setSelectedAircraftType('B747');
+          localStorage.setItem('selectedAircraftType', 'B747');
+        }
+      }
+    }
+  };
+
+  // Handler for manually changing aircraft type
+  const handleManualAircraftTypeChange = (aircraftType: string) => {
+    setSelectedAircraftType(aircraftType);
+    localStorage.setItem('selectedAircraftType', aircraftType);
+    
+    // Also update the detection mode if changed manually
+    if (aircraftDetectionMode === 'auto') {
+      setAircraftDetectionMode('manual');
+      localStorage.setItem('aircraftDetectionMode', 'manual');
+    }
+  };
+
+  // Handler for changing aircraft detection mode
+  const handleDetectionModeChange = (mode: string) => {
+    setAircraftDetectionMode(mode);
+    localStorage.setItem('aircraftDetectionMode', mode);
+    
+    // If switching to auto mode, try to detect the aircraft type immediately
+    if (mode === 'auto' && flightState.aircraftType) {
+      handleAircraftTypeEvent({ payload: { type: flightState.aircraftType } });
+    }
+  };
+
+  // Add event listener for aircraft type change events
+  useEffect(() => {
+    const unlistenAircraftType = listen('aircraft-type-changed', handleAircraftTypeEvent);
+    
+    return () => {
+      unlistenAircraftType.then(unlisten => unlisten());
+    };
+  }, [aircraftDetectionMode]);  // Depend on aircraftDetectionMode to re-apply logic when it changes
+
+  // Add SimConnect connection state
+  const [simConnectActive, setSimConnectActive] = useState<boolean>(false);
+
+  // Add handlers for connect/disconnect
+  const handleConnect = async () => {
+    console.log("Connecting to SimConnect...");
+    try {
+      await invoke('start_simconnect_data_collection');
+      // Connection state will be updated via event listeners
+    } catch (error) {
+      console.error("Failed to connect to SimConnect:", error);
+    }
+  };
+
+  const handleDisconnect = async () => {
+    console.log("Disconnecting from SimConnect...");
+    try {
+      await invoke('stop_simconnect_data_collection');
+      // Connection state will be updated via event listeners
+    } catch (error) {
+      console.error("Failed to disconnect from SimConnect:", error);
+    }
+  };
+
+  // Add SimConnect connection state listeners
+  useEffect(() => {
+    const unlistenSimconnectOpen = listen('simconnect-open', () => {
+      console.log("SimConnect connection opened");
+      setSimConnectActive(true);
+    });
+
+    const unlistenSimconnectQuit = listen('simconnect-quit', () => {
+      console.log("SimConnect connection closed");
+      setSimConnectActive(false);
+    });
+
+    const unlistenSimconnectError = listen('simconnect-error', (event) => {
+      console.error("SimConnect error:", event);
+      setSimConnectActive(false);
+    });
+
+    return () => {
+      unlistenSimconnectOpen.then(unlisten => unlisten());
+      unlistenSimconnectQuit.then(unlisten => unlisten());
+      unlistenSimconnectError.then(unlisten => unlisten());
+    };
+  }, []);
+
+  // Add landing lights toggle handler
+  const toggleLandingLights = async () => {
+    console.log("Toggling landing lights...");
+    setLandingLights(!landingLights);
+    
+    // You can add any additional logic here for interacting with SimConnect
+    // if needed for landing lights control
+  };
+
+  // Add state for custom aircraft configurations
+  const [customAircraftConfigs, setCustomAircraftConfigs] = useState<AircraftConfigs>(() => {
+    const savedConfigs = localStorage.getItem('customAircraftConfigs');
+    return savedConfigs ? JSON.parse(savedConfigs) : {};
+  });
+  
+  // Get the effective aircraft configs (custom configs override defaults)
+  const getAircraftConfigs = () => {
+    return { ...DEFAULT_AIRCRAFT_CONFIGS, ...customAircraftConfigs };
+  };
+  
+  // Handler for updating aircraft zone configurations
+  const handleZoneConfigChange = (aircraftType: string, newConfig: AircraftConfig) => {
+    console.log(`Zone config change for ${aircraftType}:`, newConfig);
+    
+    // Update custom configs
+    setCustomAircraftConfigs(prev => {
+      const updated = {
+        ...prev,
+        [aircraftType]: newConfig
+      };
+      
+      // Save to localStorage for persistence
+      localStorage.setItem('customAircraftConfigs', JSON.stringify(updated));
+      
+      console.log(`Updated custom aircraft configs:`, updated);
+      return updated;
+    });
+    
+    // Force refresh volumes to use new thresholds
+    setTimeout(() => {
+      console.log('Triggering volume update after threshold change');
+      updateAllAudioVolumes();
+    }, 100);
+  };
+
+  // Add state for debug mode
+  const [debugMode, setDebugMode] = useState(false);
+
   return (
-    <div className="min-h-screen bg-gray-900 text-white p-4">
-      <div className="max-w-7xl mx-auto">
-        <div className="flex flex-col lg:flex-row gap-6">
-          {/* Flight Status Panel */}
-          <div className="flex-1">
-            <FlightStatusPanel 
-              flightState={flightState}
-              currentVolume={currentVolume}
-              masterVolume={masterVolume}
-              currentZone={currentZone}
-              isPlaying={isPlaying}
-              currentAudioName={currentAudioName}
-              currentAudioVolume={currentAudioVolume}
-              cockpitDoorOpen={cockpitDoorOpen}
-              cameraPosition={cameraPosition}
-              landingLights={landingLights}
-              landingLightsOffCount={landingLightsOffCount}
-              hasDescendedThrough10k={hasDescendedThrough10k}
-              gsxBypassPin={gsxBypassPin}
-              seatbeltSignCount={seatbeltSignCount}
-              touchdownData={touchdownData}
-              onVolumeChange={handleVolumeChange}
-              onResetSeatbeltCount={resetSeatbeltCount}
-              onToggleWingLight={toggleWingLight}
+    <div className="App">
+      <div className="dashboard">
+        <div className="main-panel">
+          {/* Add the ConnectionControl component at the top */}
+          <ConnectionControl 
+            isConnected={simConnectActive}
+            onConnect={handleConnect}
+            onDisconnect={handleDisconnect}
+          />
+          
+          <FlightStatusPanel
+            flightState={flightState}
+            landingLights={landingLights}
+            onWingLightToggle={toggleWingLight}
+            onLandingLightsToggle={toggleLandingLights}
+          />
+          
+          <AircraftTypeSelector
+            currentAircraftType={selectedAircraftType}
+            detectedAircraftType={flightState.aircraftType}
+            onAircraftTypeChange={handleManualAircraftTypeChange}
+            detectionMode={aircraftDetectionMode}
+            onDetectionModeChange={handleDetectionModeChange}
+            aircraftConfigs={getAircraftConfigs()}
+            onZoneConfigChange={handleZoneConfigChange}
+            currentZone={currentZone}
+            zoneVolumes={{
+              outside: getZoneVolume('outside'),
+              jetway: getZoneVolume('jetway'),
+              cabin: getZoneVolume('cabin'),
+              cockpit: getZoneVolume('cockpit')
+            }}
+          />
+          
+          <CameraPosition
+            position={cameraPosition}
+            xPosition={flightState.xPosition}
+            yPosition={flightState.yPosition}
+            zPosition={flightState.zPosition}
+            currentZone={currentZone}
+          />
+          
+          <ViewDisplay
+            viewType={flightState.cameraViewType}
+            jetwayState={flightState.jetwayState ? "Attached" : "Detached"}
+            jetwayMoving={flightState.jetwayMoving}
+          />
+          
+          <div className="volume-control">
+            <label>Master Volume: {masterVolume}%</label>
+            <input
+              type="range"
+              min="0"
+              max="100"
+              value={masterVolume}
+              onChange={handleVolumeChange}
+              className="volume-slider"
             />
           </div>
+          
+          {/* Debug controls */}
+          <div className="debug-controls" style={{ marginTop: '20px', padding: '15px', border: '1px solid #ccc', borderRadius: '5px' }}>
+            <h3 style={{ margin: '0 0 10px 0' }}>Zone Detection Debug</h3>
+            
+            {/* Add Debug Mode toggle */}
+            <div style={{ marginBottom: '10px' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <input 
+                  type="checkbox" 
+                  checked={debugMode} 
+                  onChange={() => {
+                    const newMode = !debugMode;
+                    console.log(`Setting debug mode to: ${newMode ? 'ON' : 'OFF'}`);
+                    setDebugMode(newMode);
+                  }}
+                />
+                <span style={{ fontWeight: 'bold', color: debugMode ? '#ff0000' : '#333' }}>
+                  Debug Mode {debugMode ? 'ON' : 'OFF'}
+                </span>
+                {debugMode && <span style={{ fontSize: '12px' }}>(position thresholds disabled)</span>}
+              </label>
+            </div>
 
-          {/* Controls Panel */}
-          <div className="flex-1 bg-gray-800 rounded-lg shadow-lg p-6">
-            <MainPage onDisconnect={stopAllAudio} />
+            <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
+              {/* Existing buttons */}
+              <button 
+                onClick={() => {
+                  const newZ = -5; // Jetway zone for most aircraft
+                  console.log(`DEBUG: Simulating Z position: ${newZ}`);
+                  // Update flight state with new position
+                  setFlightState(prevState => ({
+                    ...prevState,
+                    zPosition: newZ
+                  }));
+                  // Force update volumes
+                  setTimeout(updateAllAudioVolumes, 100);
+                }}
+              >
+                Test Jetway Zone
+              </button>
+              <button 
+                onClick={() => {
+                  const newZ = -15; // Cabin zone for most aircraft
+                  console.log(`DEBUG: Simulating Z position: ${newZ}`);
+                  // Update flight state with new position
+                  setFlightState(prevState => ({
+                    ...prevState,
+                    zPosition: newZ
+                  }));
+                  // Force update volumes
+                  setTimeout(updateAllAudioVolumes, 100);
+                }}
+              >
+                Test Cabin Zone
+              </button>
+              <button 
+                onClick={() => {
+                  const newZ = -23; // Cockpit zone for most aircraft
+                  console.log(`DEBUG: Simulating Z position: ${newZ}`);
+                  // Update flight state with new position
+                  setFlightState(prevState => ({
+                    ...prevState,
+                    zPosition: newZ
+                  }));
+                  // Force update volumes
+                  setTimeout(updateAllAudioVolumes, 100);
+                }}
+              >
+                Test Cockpit Zone
+              </button>
+              
+              {/* Force Update button */}
+              <button 
+                onClick={() => {
+                  console.log(`DEBUG: Forcing zone update with current Z = ${flightState.zPosition}`);
+                  // Reset last position to force recalculation
+                  lastZPositionRef.current = null;
+                  // Force update
+                  updateAllAudioVolumes();
+                }}
+                style={{ backgroundColor: '#ff9800', color: 'white', fontWeight: 'bold' }}
+              >
+                Force Update Zone
+              </button>
+            </div>
+            
+            <div>
+              <p>Current Zone: <strong>{currentZone}</strong></p>
+              <p>Current Volume: <strong>{currentVolume.toFixed(1)}%</strong></p>
+              <p>Z-Position: <strong>{flightState.zPosition.toFixed(2)}</strong></p>
+              <p>Last Zone Update: <strong>{Math.round((Date.now() - lastZoneUpdateTimeRef.current) / 100) / 10}s ago</strong></p>
+              <p>Auto-check in: <strong>{Math.max(0, Math.round((ZONE_RECALCULATION_TIMEOUT - (Date.now() - lastZoneUpdateTimeRef.current)) / 100) / 10)}s</strong></p>
+              <p>Position Threshold: <strong>{debugMode ? 'Disabled' : POSITION_THRESHOLD}</strong></p>
+            </div>
           </div>
         </div>
       </div>
+      
+      {/* Audio elements */}
+      <audio ref={boardingMusicRef} id="boarding-music" loop preload="auto" />
+      <audio ref={welcomeAboardRef} id="welcome-aboard" preload="auto" />
+      <audio ref={doorsAutoRef} id="doors-auto" preload="auto" />
+      <audio ref={tenKFeetRef} id="10k-feet" preload="auto" />
+      <audio ref={arriveSoonRef} id="arrive-soon" preload="auto" />
+      <audio ref={landingSoonRef} id="landing-soon" preload="auto" />
+      <audio ref={weveArrivedRef} id="weve-arrived" preload="auto" />
+      <audio ref={almostReadyRef} id="almost-ready" preload="auto" />
+      <audio ref={seatsForDepartureRef} id="seats-for-departure" preload="auto" />
+      <audio ref={safetyVideoRef} id="safety-video" preload="auto" />
+      <audio ref={fastenSeatbeltRef} id="fasten-seatbelt" preload="auto" />
+      <audio ref={beaconLightSoundRef} id="beacon-light-sound" preload="auto" />
     </div>
   );
 }
