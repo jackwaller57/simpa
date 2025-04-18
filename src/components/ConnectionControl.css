@@ -1,0 +1,74 @@
+.connection-control {
+  background-color: rgba(30, 30, 30, 0.8);
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 20px;
+  color: white;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.connection-control h3 {
+  font-size: 18px;
+  margin: 0 0 15px 0;
+}
+
+.connection-status {
+  display: flex;
+  align-items: center;
+  margin-bottom: 15px;
+  font-size: 14px;
+}
+
+.status-label {
+  color: #bbb;
+  width: 60px;
+}
+
+.status-value {
+  font-weight: 500;
+}
+
+.status-connected {
+  color: #4CAF50;
+}
+
+.status-disconnected {
+  color: #F44336;
+}
+
+.connection-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+.connect-button, .disconnect-button {
+  padding: 8px 16px;
+  border: none;
+  border-radius: 4px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background-color 0.2s, opacity 0.2s;
+}
+
+.connect-button {
+  background-color: #4CAF50;
+  color: white;
+}
+
+.connect-button:hover:not(:disabled) {
+  background-color: #45a049;
+}
+
+.disconnect-button {
+  background-color: #f44336;
+  color: white;
+}
+
+.disconnect-button:hover:not(:disabled) {
+  background-color: #e53935;
+}
+
+.connect-button:disabled, .disconnect-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+} 

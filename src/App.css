@@ -72,3 +72,65 @@
   font-family: monospace;
   font-size: 1.1em;
 }
+
+.App {
+  min-height: 100vh;
+  background-color: #121212;
+  color: white;
+  padding: 20px;
+}
+
+.dashboard {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.main-panel {
+  display: flex;
+  flex-direction: column;
+}
+
+.volume-control {
+  background-color: rgba(30, 30, 30, 0.8);
+  border-radius: 8px;
+  padding: 15px;
+  margin-bottom: 20px;
+  color: white;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.volume-control label {
+  margin-right: 15px;
+}
+
+.volume-slider {
+  flex-grow: 1;
+  height: 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #555;
+  border-radius: 3px;
+  outline: none;
+}
+
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #4db6ac;
+  cursor: pointer;
+}
+
+.volume-slider::-moz-range-thumb {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #4db6ac;
+  cursor: pointer;
+  border: none;
+}
