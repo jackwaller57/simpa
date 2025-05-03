@@ -42,6 +42,7 @@ export interface AudioManager {
     fadeOut?: number;
   }): any;
   updateZoneVolumes(zone: string, position: number, thresholds: AircraftZones): void;
+  updateZoneVolumesSpatial(position: number, thresholds: AircraftZones, fadeDuration?: number): void;
   setMasterVolume(volume: number): void;
   setDebugMode(enabled: boolean): void;
   getAudioState(): AudioState;

@@ -26,6 +26,10 @@ export class AudioManager {
     delay: DelayNode | null;
     compressor: DynamicsCompressorNode | null;
   };
+  // Add a variable to track currently active transitions
+  private activeTransitions: Map<string, number>;
+  // Define transition buffer constant (overlap between zones)
+  private readonly ZONE_TRANSITION_BUFFER = 0.2;
 
   constructor() {
     this.audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
@@ -41,6 +45,8 @@ export class AudioManager {
       delay: null,
       compressor: null
     };
+    // Initialize transitions map
+    this.activeTransitions = new Map();
   }
 
   // Initialize audio system
@@ -58,10 +64,13 @@ export class AudioManager {
         this.gainNodes.set(zone, gainNode);
       });
 
-      // Initialize audio effects
-      this.initializeEffects();
+      // Initialize standard audio effects
+      await this.initializeEffects();
+      
+      // Initialize zone-specific reverbs for enhanced spatial audio
+      await this.initializeZoneReverbs();
 
-      console.log('Audio system initialized successfully');
+      console.log('Audio system initialized successfully with enhanced spatial audio');
     } catch (error) {
       console.error('Error initializing audio system:', error);
     }
@@ -236,10 +245,34 @@ export class AudioManager {
 
   // Set master volume
   public setMasterVolume(volume: number) {
-    this.masterVolume = volume;
-    const masterGain = this.gainNodes.get('master');
-    if (masterGain) {
-      masterGain.gain.setValueAtTime(volume, this.audioContext.currentTime);
+    try {
+      // Validate volume value
+      if (typeof volume !== 'number' || !isFinite(volume)) {
+        console.warn(`Invalid master volume value: ${volume}`);
+        return;
+      }
+      
+      // Store the volume value
+      this.masterVolume = volume;
+      
+      // Apply the volume to the master gain node
+      const masterGain = this.gainNodes.get('master');
+      if (masterGain) {
+        const currentTime = this.audioContext.currentTime;
+        
+        // Schedule smooth transition to avoid clicks
+        masterGain.gain.cancelScheduledValues(currentTime);
+        masterGain.gain.setValueAtTime(masterGain.gain.value, currentTime);
+        masterGain.gain.linearRampToValueAtTime(volume, currentTime + 0.05);
+        
+        if (this.debugMode) {
+          console.log(`Master volume set to ${Math.round(volume * 100)}%`);
+        }
+      } else {
+        console.warn('Master gain node not found');
+      }
+    } catch (error) {
+      console.error('Error setting master volume:', error);
     }
   }
 
@@ -427,5 +460,280 @@ export class AudioManager {
       // Connect to destination
       lastNode.connect(this.audioContext.destination);
     });
+  }
+
+  /**
+   * Enhanced method for updating zone volumes with smoother spatial transitions
+   * This method is inspired by the Fenix-style PA system
+   */
+  public updateZoneVolumesSpatial(position: number, thresholds: AircraftZones, fadeDuration: number = this.fadeDuration): void {
+    try {
+      // Calculate volumes for all zones based on position
+      const volumes = this.calculateSpatialZoneVolumes(position, thresholds);
+      
+      if (this.debugMode) {
+        console.log('Spatial zone volumes:', volumes);
+      }
+      
+      // Apply volumes with smooth transitions to all zones
+      Object.entries(volumes).forEach(([zone, targetVolume]) => {
+        this.smoothlyTransitionZoneVolume(zone, targetVolume, fadeDuration);
+      });
+      
+      // Update current zone based on position
+      // Find the zone with the highest volume
+      let maxVolume = -1;
+      let maxVolumeZone = this.currentZone;
+      
+      Object.entries(volumes).forEach(([zone, volume]) => {
+        if (volume > maxVolume) {
+          maxVolume = volume;
+          maxVolumeZone = zone;
+        }
+      });
+      
+      // Update current zone if changed
+      if (maxVolumeZone !== this.currentZone) {
+        this.currentZone = maxVolumeZone;
+        
+        // Apply zone-specific reverb when zone changes
+        this.applyZoneReverb(this.currentZone);
+        
+        if (this.debugMode) {
+          console.log(`Zone changed to: ${this.currentZone} with appropriate reverb`);
+        }
+      }
+    } catch (error) {
+      console.error('Error updating spatial zone volumes:', error);
+    }
+  }
+  
+  /**
+   * Calculate volume for each zone based on position with overlapping transitions
+   */
+  private calculateSpatialZoneVolumes(position: number, thresholds: AircraftZones): Record<string, number> {
+    const volumes: Record<string, number> = {
+      outside: 0,
+      jetway: 0,
+      cabin: 0,
+      cockpit: 0
+    };
+    
+    // Base volumes for each zone (can be adjusted)
+    const baseVolumes: Record<string, number> = {
+      outside: 0.45,
+      jetway: 0.8,
+      cabin: 0.7,
+      cockpit: 0.65
+    };
+    
+    // Calculate each zone's volume with overlap
+    Object.entries(thresholds).forEach(([zoneName, config]) => {
+      // Skip invalid configurations
+      if (!config || typeof config.start !== 'number' || typeof config.end !== 'number') {
+        return;
+      }
+      
+      // Ensure zoneName is a key in volumes
+      if (!(zoneName in volumes)) {
+        return;
+      }
+      
+      // Calculate extended boundaries with transition buffer
+      const zoneStart = Math.min(config.start, config.end);
+      const zoneEnd = Math.max(config.start, config.end);
+      const extendedStart = zoneStart - this.ZONE_TRANSITION_BUFFER;
+      const extendedEnd = zoneEnd + this.ZONE_TRANSITION_BUFFER;
+      
+      // Check if position is within extended zone boundaries
+      if (position >= extendedStart && position <= extendedEnd) {
+        // Calculate distance from zone center
+        const zoneCenter = (zoneStart + zoneEnd) / 2;
+        const zoneWidth = Math.abs(zoneEnd - zoneStart);
+        const extendedWidth = zoneWidth + (this.ZONE_TRANSITION_BUFFER * 2);
+        
+        // Calculate normalized position within zone (0 = center, 1 = edge)
+        const distanceFromCenter = Math.abs(position - zoneCenter);
+        const normalizedPos = Math.min(1, distanceFromCenter / (extendedWidth / 2));
+        
+        // Use cosine curve for smoother falloff (1 at center, 0 at edge)
+        const falloff = Math.cos(normalizedPos * Math.PI / 2);
+        
+        // Apply base volume and falloff
+        volumes[zoneName] = baseVolumes[zoneName as keyof typeof baseVolumes] * Math.max(0, falloff);
+      }
+    });
+    
+    // Normalize volumes if their sum exceeds 1.0
+    const totalVolume = Object.values(volumes).reduce((sum, vol) => sum + vol, 0);
+    if (totalVolume > 1.0) {
+      Object.keys(volumes).forEach(zone => {
+        volumes[zone] /= totalVolume;
+      });
+    }
+    
+    return volumes;
+  }
+  
+  /**
+   * Apply smooth volume transition to a zone
+   */
+  private smoothlyTransitionZoneVolume(zone: string, targetVolume: number, fadeDuration: number): void {
+    const gainNode = this.gainNodes.get(zone);
+    if (!gainNode) return;
+    
+    const currentTime = this.audioContext.currentTime;
+    const currentVolume = gainNode.gain.value;
+    
+    // Skip if the change is negligible
+    if (Math.abs(currentVolume - targetVolume) < 0.01) {
+      return;
+    }
+    
+    // Cancel any scheduled values for this gain node
+    gainNode.gain.cancelScheduledValues(currentTime);
+    
+    // Set current value at current time
+    gainNode.gain.setValueAtTime(currentVolume, currentTime);
+    
+    // Smoothly transition to target volume
+    gainNode.gain.linearRampToValueAtTime(
+      targetVolume,
+      currentTime + fadeDuration
+    );
+    
+    // Clear any previous transition timeout
+    if (this.activeTransitions.has(zone)) {
+      window.clearTimeout(this.activeTransitions.get(zone));
+    }
+    
+    // Add a timeout to track when this transition completes
+    const timeoutId = window.setTimeout(() => {
+      this.activeTransitions.delete(zone);
+      
+      if (this.debugMode) {
+        console.log(`Transition for ${zone} completed. Volume: ${targetVolume.toFixed(2)}`);
+      }
+    }, fadeDuration * 1000);
+    
+    this.activeTransitions.set(zone, timeoutId);
+  }
+
+  /**
+   * Creates zone-specific reverb impulse responses for more realistic spatial audio
+   * This enhances the sense of space in different aircraft zones
+   */
+  private async initializeZoneReverbs(): Promise<void> {
+    try {
+      if (!this.effects.reverb) {
+        // Create the convolver node first
+        this.effects.reverb = this.audioContext.createConvolver();
+      }
+      
+      // Generate zone-specific impulse responses
+      const zones = ['outside', 'jetway', 'cabin', 'cockpit'];
+      
+      for (const zone of zones) {
+        // Create reverb characteristics specific to each zone
+        const impulseResponse = await this.createZoneImpulseResponse(zone);
+        
+        // Store the impulse response in the audio buffer for later use
+        this.audioBuffers.set(`reverb_${zone}`, impulseResponse);
+      }
+      
+      console.log('Zone-specific reverbs initialized');
+    } catch (error) {
+      console.error('Error initializing zone reverbs:', error);
+    }
+  }
+  
+  /**
+   * Create custom impulse response for each zone with different acoustic properties
+   */
+  private async createZoneImpulseResponse(zone: string): Promise<AudioBuffer> {
+    // Create different reverb profiles for each zone
+    let duration = 2.0; // Base duration in seconds
+    let decay = 0.5;    // Base decay factor
+    let earlyReflections = 0.7; // Base early reflections strength
+    
+    // Configure zone-specific reverb characteristics
+    switch(zone) {
+      case 'outside':
+        duration = 0.5; // Short reverb outside
+        decay = 0.2;
+        earlyReflections = 0.3;
+        break;
+      case 'jetway':
+        duration = 1.2; // Medium reverb in jetway (enclosed tube)
+        decay = 0.5;
+        earlyReflections = 0.8; // Strong early reflections in small space
+        break;
+      case 'cabin':
+        duration = 1.8; // Longer reverb in cabin
+        decay = 0.7;
+        earlyReflections = 0.6;
+        break;
+      case 'cockpit':
+        duration = 0.8; // Shorter, more dampened reverb in cockpit
+        decay = 0.45;
+        earlyReflections = 0.9; // Strongest early reflections in smallest space
+        break;
+    }
+    
+    // Create the impulse response
+    const sampleRate = this.audioContext.sampleRate;
+    const length = Math.floor(sampleRate * duration);
+    const impulse = this.audioContext.createBuffer(2, length, sampleRate);
+    const leftChannel = impulse.getChannelData(0);
+    const rightChannel = impulse.getChannelData(1);
+    
+    // Generate a realistic impulse response with early reflections and decay
+    for (let i = 0; i < length; i++) {
+      const time = i / sampleRate;
+      
+      // Early reflections (first 50-100ms)
+      if (time < 0.1) {
+        // Create several discrete reflections
+        const reflectionTime = time / 0.1; // Normalize to 0-1 range
+        const reflectionStrength = Math.pow(1 - reflectionTime, 2) * earlyReflections;
+        
+        // Add some randomness to early reflections
+        if (i % 400 < 10) {
+          leftChannel[i] = (Math.random() * 2 - 1) * reflectionStrength;
+          rightChannel[i] = (Math.random() * 2 - 1) * reflectionStrength;
+        } else {
+          leftChannel[i] = 0;
+          rightChannel[i] = 0;
+        }
+      } 
+      // Late reverb tail (exponential decay)
+      else {
+        const amplitude = Math.exp(-time * decay * 5);
+        
+        // Decorrelate left and right channels for spaciousness
+        leftChannel[i] = (Math.random() * 2 - 1) * amplitude;
+        rightChannel[i] = (Math.random() * 2 - 1) * amplitude;
+      }
+    }
+    
+    return impulse;
+  }
+  
+  /**
+   * Apply zone-specific reverb to audio output
+   */
+  public applyZoneReverb(zone: string): void {
+    if (!this.effects.reverb) return;
+    
+    // Get the impulse response for this zone
+    const impulseResponse = this.audioBuffers.get(`reverb_${zone}`);
+    if (!impulseResponse) return;
+    
+    // Apply the impulse response to the convolver
+    this.effects.reverb.buffer = impulseResponse;
+    
+    if (this.debugMode) {
+      console.log(`Applied ${zone}-specific reverb`);
+    }
   }
 } 
