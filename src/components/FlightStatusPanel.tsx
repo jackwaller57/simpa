@@ -21,6 +21,7 @@ interface FlightStatusPanelProps {
   onReset?: () => void;
   onWingLightToggle?: () => void;
   onLandingLightsToggle?: () => void;
+  onSeatbeltSignToggle?: () => void;
 }
 
 const FlightStatusPanel: React.FC<FlightStatusPanelProps> = ({
@@ -28,7 +29,8 @@ const FlightStatusPanel: React.FC<FlightStatusPanelProps> = ({
   landingLights,
   onReset,
   onWingLightToggle,
-  onLandingLightsToggle
+  onLandingLightsToggle,
+  onSeatbeltSignToggle
 }) => {
   return (
     <div className="flight-status-panel">
@@ -93,6 +95,11 @@ const FlightStatusPanel: React.FC<FlightStatusPanelProps> = ({
           <span className={`status-value ${flightState.seatbeltSign ? 'status-on' : 'status-off'}`}>
             {flightState.seatbeltSign ? 'ON' : 'OFF'}
           </span>
+          {onSeatbeltSignToggle && (
+            <button className="control-button" onClick={onSeatbeltSignToggle}>
+              Toggle
+            </button>
+          )}
         </div>
         
         <div className="status-item">

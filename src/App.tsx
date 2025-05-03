@@ -9,36 +9,63 @@ import ViewDisplay from './components/ViewDisplay';
 import AircraftTypeSelector from './components/AircraftTypeSelector';
 import ConnectionControl from './components/ConnectionControl';
 import { getZoneFromPosition, getVolumeForZone } from './zoneFix';
+import { AudioManager } from './audio/AudioManager';
+import { AudioControlPanel } from './components/AudioControlPanel';
+import FenixStylePA from './components/FenixStylePA';
+import './components/AudioControlPanel.css';
+// Import types but rename them to avoid conflicts
+import * as AppTypes from './types';
 
-// Define aircraft configuration types
-interface ZoneThresholds {
-  start: number;
-  end: number;
+// Local interfaces for App component
+interface FlightState {
+  xPosition: number;
+  yPosition: number;
+  zPosition: number;
+  speed: number;
+  heading: number;
+  altitude?: number;
+  cameraViewType: string;
+  beaconLight: boolean;
+  seatbeltSign: boolean;
+  jetwayMoving: boolean;
+  jetwayState: number;
+  wingLight: boolean;
+  aircraftType?: string;
 }
 
-interface AircraftZones {
-  outside: ZoneThresholds;
-  jetway: ZoneThresholds;
-  cabin: ZoneThresholds;
-  cockpit: ZoneThresholds;
+interface CameraPositionPayload {
+  position: string;
+  viewType: string;
+  volumeLevel: number;
+  xPosition?: number;
+  yPosition?: number;
+  zPosition?: number;
 }
 
-interface AircraftConfig {
-  zones: AircraftZones;
+interface AudioEvent {
+  name: string;
+  action: 'play' | 'stop' | 'pause';
 }
 
-type AircraftConfigs = {
-  [key: string]: AircraftConfig;
-};
+// Add Window interface
+declare global {
+  interface Window {
+    ipcRenderer?: {
+      send: (channel: string, ...args: any[]) => void;
+      on: (channel: string, listener: (...args: any[]) => void) => void;
+      removeListener: (channel: string, listener: (...args: any[]) => void) => void;
+    };
+  }
+}
 
-// Aircraft configurations for zone control
-const DEFAULT_AIRCRAFT_CONFIGS: AircraftConfigs = {
+// Aircraft configurations
+const DEFAULT_AIRCRAFT_CONFIGS: AppTypes.AircraftConfigs = {
   "A320": {
     zones: {
-      outside: { start: -1.60, end: -1.60 },
-      jetway: { start: -12.0, end: -12.0 },
-      cabin: { start: -22.4, end: -22.4 },
-      cockpit: { start: -24.3, end: -24.3 }
+      outside: { start: 0.0, end: -1.6 },
+      jetway: { start: -1.6, end: -12.0 },
+      cabin: { start: -12.0, end: -22.4 },
+      cockpit: { start: -22.4, end: -24.3 }
     }
   },
   "A319": {
@@ -179,46 +206,50 @@ const DEFAULT_AIRCRAFT_CONFIGS: AircraftConfigs = {
   }
 };
 
-interface FlightState {
-  xPosition: number;
-  yPosition: number;
-  zPosition: number;
-  speed: number;
-  heading: number;
-  altitude?: number;
-  cameraViewType: string;
-  beaconLight: boolean;
-  seatbeltSign: boolean;
-  jetwayMoving: boolean;
-  jetwayState: number;
-  wingLight: boolean;
-  aircraftType?: string; // Added aircraft type for auto-detection
-}
-
-interface CameraPositionPayload {
-  position: string;
-  viewType: string;
-  volumeLevel: number;
-  xPosition?: number;
-  yPosition?: number;
-  zPosition?: number;
-}
-
-interface AudioEvent {
-  name: string;
-  action: 'play' | 'stop' | 'pause';
-}
-
-// Add Window interface extension before the App component
-interface Window {
-  ipcRenderer?: {
-    send: (channel: string, ...args: any[]) => void;
-    on: (channel: string, listener: (...args: any[]) => void) => void;
-    removeListener: (channel: string, listener: (...args: any[]) => void) => void;
-  };
-}
-
 function App() {
+  // State declarations at the top
+  const [position, setPosition] = useState<number>(0);
+  const [thresholds, setThresholds] = useState<AppTypes.AircraftZones>({
+    outside: { start: 0.0, end: -1.6 },
+    jetway: { start: -1.6, end: -12.0 },
+    cabin: { start: -12.0, end: -22.4 },
+    cockpit: { start: -22.4, end: -24.3 }
+  });
+  const [audioManager] = useState(() => new AudioManager());
+  const [currentZone, setCurrentZone] = useState<string>('outside');
+
+  // Initialize audio manager
+  useEffect(() => {
+    audioManager.initialize();
+  }, [audioManager]);
+
+  // Update position and thresholds when camera position changes
+  useEffect(() => {
+    const handleCameraPosition = (event: any) => {
+      if (event.xPosition !== undefined) {
+        setPosition(event.xPosition);
+      }
+      if (event.thresholds) {
+        setThresholds(event.thresholds);
+      }
+      if (event.zone) {
+        setCurrentZone(event.zone);
+      }
+    };
+
+    window.ipcRenderer?.on('camera-position', handleCameraPosition);
+    return () => {
+      window.ipcRenderer?.removeListener('camera-position', handleCameraPosition);
+    };
+  }, []);
+
+  // Update audio manager when zone changes
+  useEffect(() => {
+    if (currentZone && position && thresholds) {
+      audioManager.updateZoneVolumes(currentZone, position, thresholds);
+    }
+  }, [currentZone, position, thresholds, audioManager]);
+
   const [beaconLight, setBeaconLight] = useState<boolean>(false);
   const [landingLights, setLandingLights] = useState<boolean>(false);
   const [landingLightsOffCount, setLandingLightsOffCount] = useState<number>(0);
@@ -230,7 +261,6 @@ function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentAudioName, setCurrentAudioName] = useState<string>('');
   const [currentAudioVolume, setCurrentAudioVolume] = useState<number>(0);
-  const [currentZone, setCurrentZone] = useState<string>('outside');
   const [timeSinceLastUpdate, setTimeSinceLastUpdate] = useState(0);
   const currentTimeRef = useRef(Date.now());
   const [wingLightCount, setWingLightCount] = useState<number>(0);
@@ -374,49 +404,23 @@ function App() {
   //   });
   // };
 
-  // Improve the fadeVolume function for smoother transitions between zones
-  const fadeVolume = (element: HTMLAudioElement, targetVolume: number, duration = 1000) => {
-    // Don't attempt to fade if element is not available
-    if (!element) return;
-    
-    // Clear any existing fade intervals
-    if (fadeIntervalRef.current) {
-      clearInterval(fadeIntervalRef.current);
-      fadeIntervalRef.current = null;
-    }
-    
+  // Revert fadeVolume function to original implementation
+  const fadeVolume = (element: HTMLAudioElement, targetVolume: number) => {
     const startVolume = element.volume;
-    const volumeDelta = targetVolume - startVolume;
-    
-    // If no change or very minimal change, just set it directly
-    if (Math.abs(volumeDelta) < 0.01) {
-      element.volume = targetVolume;
-      return;
-    }
-    
-    // Log the volume transition
-    console.log(`Fading volume from ${startVolume.toFixed(2)} to ${targetVolume.toFixed(2)} over ${duration}ms`);
-    
-    // For zone transitions, use more steps for smoother fading
-    const steps = 20; // More steps = smoother transition
+    const duration = 250; // 250ms fade duration
+    const steps = 10; // Number of steps in the fade
     const stepTime = duration / steps;
-    const volumeStep = volumeDelta / steps;
+    const volumeStep = (targetVolume - startVolume) / steps;
     let currentStep = 0;
 
-    // Create and store the interval for cleanup
-    fadeIntervalRef.current = window.setInterval(() => {
+    const fadeInterval = setInterval(() => {
       currentStep++;
       const newVolume = startVolume + (volumeStep * currentStep);
-      // Ensure volume is between 0 and 1
-      element.volume = Math.max(0, Math.min(1, newVolume)); 
+      element.volume = Math.max(0, Math.min(1, newVolume)); // Ensure volume stays between 0 and 1
 
       if (currentStep >= steps) {
-        if (fadeIntervalRef.current) {
-          clearInterval(fadeIntervalRef.current);
-          fadeIntervalRef.current = null;
-        }
+        clearInterval(fadeInterval);
         element.volume = targetVolume;
-        console.log(`Fade complete: Volume set to ${targetVolume.toFixed(2)}`);
       }
     }, stepTime);
   };
@@ -432,7 +436,7 @@ function App() {
   // Function to determine current zone based on camera Z position
   const getCurrentZone = (
     cameraPosition: [number, number, number],
-    thresholds?: AircraftZones
+    thresholds?: AppTypes.AircraftZones
   ): string => {
     if (!thresholds) {
       console.log('getCurrentZone: No thresholds provided, defaulting to "outside"');
@@ -528,6 +532,7 @@ function App() {
     console.log("Starting zone detection monitoring");
     monitorZoneDetection();
     
+    
     return () => {
       console.log("Stopping zone detection monitoring");
       if (zoneMonitorTimeoutRef.current) {
@@ -536,7 +541,7 @@ function App() {
     };
   }, []);
 
-  // Modify updateAllAudioVolumes to update the lastZoneUpdateTimeRef
+  // Revert the changes to updateAllAudioVolumes to restore the original behavior
   const updateAllAudioVolumes = () => {
     const now = Date.now();
     if (now - lastVolumeUpdateRef.current < VOLUME_DEBOUNCE_TIME) {
@@ -587,62 +592,45 @@ function App() {
     const zoneChanged = zone !== currentZoneRef.current;
     if (zoneChanged) {
       console.log(`ZONE CHANGED from ${currentZoneRef.current || 'unknown'} to ${zone}`);
-      
-      // Use a longer fade duration when zones change for smoother transition
-      const zoneFadeDuration = 1500; // 1.5 seconds for zone transitions
-      
-      const baseVolume = getZoneVolume(zone);
-      const logVolume = toLogVolume(baseVolume * 100);
-      const finalVolume = (masterVolume / 100) * logVolume;
-      
-      // Update all audio elements with extra-smooth transition for zone changes
-      const updateVolumeWithZoneFade = (ref: React.MutableRefObject<HTMLAudioElement | null>, name: string) => {
-        if (ref.current) {
-          fadeVolume(ref.current, finalVolume, zoneFadeDuration);
-        }
-      };
-      
-      // Update all audio elements with the longer fade
-      updateVolumeWithZoneFade(boardingMusicRef, 'boarding music');
-      updateVolumeWithZoneFade(welcomeAboardRef, 'welcome aboard');
-      updateVolumeWithZoneFade(doorsAutoRef, 'doors auto');
-      updateVolumeWithZoneFade(tenKFeetRef, '10k feet');
-      updateVolumeWithZoneFade(arriveSoonRef, 'arrive soon');
-      updateVolumeWithZoneFade(landingSoonRef, 'landing soon');
-      updateVolumeWithZoneFade(weveArrivedRef, 'weve arrived');
-      updateVolumeWithZoneFade(almostReadyRef, 'almost ready');
-      updateVolumeWithZoneFade(seatsForDepartureRef, 'seats for departure');
-      updateVolumeWithZoneFade(safetyVideoRef, 'safety video');
-      updateVolumeWithZoneFade(fastenSeatbeltRef, 'fasten seatbelt');
-    } else {
-      // For non-zone changes, use the standard fade for minor adjustments
-      const baseVolume = getZoneVolume(zone);
-      const logVolume = toLogVolume(baseVolume * 100);
-      const finalVolume = (masterVolume / 100) * logVolume;
-      
-      // Update all audio elements with normal short fade for position adjustments
-      const updateVolume = (ref: React.MutableRefObject<HTMLAudioElement | null>, name: string) => {
-        if (ref.current) {
-          fadeVolume(ref.current, finalVolume, 250); // Use shorter duration for same-zone adjustments
-        }
-      };
-      
-      // Update all audio elements with shorter fade
-      updateVolume(boardingMusicRef, 'boarding music');
-      updateVolume(welcomeAboardRef, 'welcome aboard');
-      updateVolume(doorsAutoRef, 'doors auto');
-      updateVolume(tenKFeetRef, '10k feet');
-      updateVolume(arriveSoonRef, 'arrive soon');
-      updateVolume(landingSoonRef, 'landing soon');
-      updateVolume(weveArrivedRef, 'weve arrived');
-      updateVolume(almostReadyRef, 'almost ready');
-      updateVolume(seatsForDepartureRef, 'seats for departure');
-      updateVolume(safetyVideoRef, 'safety video');
-      updateVolume(fastenSeatbeltRef, 'fasten seatbelt');
     }
+    
+    console.log(`updateAllAudioVolumes: Determined zone: ${zone}`);
+    
+    const baseVolume = getZoneVolume(zone);
+    const logVolume = toLogVolume(baseVolume * 100);
+    const finalVolume = (masterVolume / 100) * logVolume;
 
-    // Update volume indicator and zone (show linear value for user)
-    setCurrentVolume(getZoneVolume(zone) * 100);
+    console.log('Volume calculation:', {
+      currentZ,
+      zone,
+      baseVolume,
+      logVolume,
+      finalVolume,
+      masterVolume
+    });
+
+    // Update all audio elements with smooth transition
+    const updateVolume = (ref: React.MutableRefObject<HTMLAudioElement | null>, name: string) => {
+      if (ref.current) {
+        fadeVolume(ref.current, finalVolume);
+      }
+    };
+
+    // Update all audio elements including doors auto
+    updateVolume(boardingMusicRef, 'boarding music');
+    updateVolume(welcomeAboardRef, 'welcome aboard');
+    updateVolume(doorsAutoRef, 'doors auto');
+    updateVolume(tenKFeetRef, '10k feet');
+    updateVolume(arriveSoonRef, 'arrive soon');
+    updateVolume(landingSoonRef, 'landing soon');
+    updateVolume(weveArrivedRef, 'weve arrived');
+    updateVolume(almostReadyRef, 'almost ready');
+    updateVolume(seatsForDepartureRef, 'seats for departure');
+    updateVolume(safetyVideoRef, 'safety video');
+    updateVolume(fastenSeatbeltRef, 'fasten seatbelt');
+
+    // Update volume indicator (show linear value for user)
+    setCurrentVolume(baseVolume * 100);
     setCurrentZone(zone);
 
     // Update timestamp of last zone calculation
@@ -833,7 +821,7 @@ function App() {
   // Function to handle landing lights state changes
   const handleLandingLightsChange = (newState: boolean) => {
     console.log(`Landing lights state changed: ${lastLandingLightsStateRef.current} -> ${newState}`);
-    console.log(`Current count: ${landingLightsOffCount}`);
+    console.log(`Current count: ${landingLightsOffCount}, Has descended through 10k: ${hasDescendedThrough10kRef.current}`);
     
     // Only process if the state has actually changed
     if (newState !== lastLandingLightsStateRef.current) {
@@ -846,34 +834,22 @@ function App() {
           console.log(`Incrementing count from ${prevCount} to ${newCount}`);
           console.log(`Checking conditions for "We've arrived" announcement:`);
           console.log(`- Landing lights off count: ${newCount} (needs to be exactly 2)`);
-          console.log(`- Has descended through 10k: ${hasDescendedThrough10k}`);
+          console.log(`- Has descended through 10k: ${hasDescendedThrough10kRef.current}`);
           
           // Check if we should play "We've arrived" announcement
-          if (newCount === 2 && hasDescendedThrough10k) {
+          if (newCount === 2 && hasDescendedThrough10kRef.current) {
             console.log('Conditions met! Playing "We\'ve arrived" announcement');
             if (weveArrivedRef.current) {
-              const currentZ = flightState.zPosition || lastCameraZRef.current || 0;
-              const zone = getCurrentZone([currentZ, 0, 0]);
-              const baseVolume = getZoneVolume(zone);
-              const logVolume = toLogVolume(baseVolume * 100);
-              const positionVolume = (masterVolume / 100) * logVolume;
-              
-              weveArrivedRef.current.volume = positionVolume;
-              weveArrivedRef.current.currentTime = 0;
-              weveArrivedRef.current.play()
-                .then(() => {
-                  console.log('Successfully started playing "We\'ve arrived" announcement');
-                  setIsPlaying(true);
-                  setCurrentAudioName('weve_arrived');
-                  setCurrentAudioVolume(positionVolume * 100);
-                  setCurrentZone(zone);
-                })
-                .catch(error => {
-                  console.error('Error playing "We\'ve arrived" announcement:', error);
-                });
+              // Use the helper function for consistent audio playback management
+              playAnnouncementWithVolume(weveArrivedRef, 'weve_arrived', () => {
+                console.log('We\'ve arrived announcement completed');
+              });
+            } else {
+              console.error('weveArrivedRef.current is null - cannot play announcement');
             }
           } else {
             console.log('Conditions not met for "We\'ve arrived" announcement');
+            console.log(`Landing lights off count: ${newCount}, Has descended through 10k: ${hasDescendedThrough10kRef.current}`);
           }
           
           return newCount;
@@ -1790,28 +1766,16 @@ function App() {
               console.log('Below 10,000 feet - triggering landing soon announcement');
               landingSoonAnnouncedRef.current = true;
               
-              // Play landing soon announcement
+              // Play landing soon announcement using the playAnnouncementWithVolume function instead
+              // which properly handles audio playback with cleanup
               if (landingSoonRef.current) {
                 console.log('Playing landing soon announcement');
-                const currentZ = flightState.zPosition || lastCameraZRef.current || 0;
-                const zone = getCurrentZone([currentZ, 0, 0]);
-                const baseVolume = getZoneVolume(zone);
-                const logVolume = toLogVolume(baseVolume * 100);
-                const positionVolume = (masterVolume / 100) * logVolume;
-                
-                landingSoonRef.current.volume = positionVolume;
-                landingSoonRef.current.currentTime = 0;
-                landingSoonRef.current.play()
-                  .then(() => {
-                    console.log('Successfully started playing landing soon announcement');
-                    setIsPlaying(true);
-                    setCurrentAudioName('landing_soon');
-                    setCurrentAudioVolume(positionVolume * 100);
-                    setCurrentZone(zone);
-                  })
-                  .catch(error => {
-                    console.error('Error playing landing soon announcement:', error);
-                  });
+                // Use the helper function for consistent audio playback management
+                playAnnouncementWithVolume(landingSoonRef, 'landing_soon', () => {
+                  console.log('Landing soon announcement completed');
+                  // Make sure the flag stays true even after playback ends
+                  landingSoonAnnouncedRef.current = true;
+                });
               }
             }
           }
@@ -2907,43 +2871,94 @@ function App() {
   };
 
   // Add state for custom aircraft configurations
-  const [customAircraftConfigs, setCustomAircraftConfigs] = useState<AircraftConfigs>(() => {
+  const [customAircraftConfigs, setCustomAircraftConfigs] = useState<AppTypes.AircraftConfigs>(() => {
     const savedConfigs = localStorage.getItem('customAircraftConfigs');
     return savedConfigs ? JSON.parse(savedConfigs) : {};
   });
   
   // Get the effective aircraft configs (custom configs override defaults)
-  const getAircraftConfigs = () => {
+  const getAircraftConfigs = (): AppTypes.AircraftConfigs => {
     return { ...DEFAULT_AIRCRAFT_CONFIGS, ...customAircraftConfigs };
   };
   
   // Handler for updating aircraft zone configurations
-  const handleZoneConfigChange = (aircraftType: string, newConfig: AircraftConfig) => {
-    console.log(`Zone config change for ${aircraftType}:`, newConfig);
+  const handleZoneConfigChange = (aircraftType: string, newConfig: AppTypes.AircraftConfig): void => {
+    console.log(`Updating zone config for ${aircraftType}:`, newConfig);
     
-    // Update custom configs
-    setCustomAircraftConfigs(prev => {
-      const updated = {
-        ...prev,
-        [aircraftType]: newConfig
-      };
-      
-      // Save to localStorage for persistence
-      localStorage.setItem('customAircraftConfigs', JSON.stringify(updated));
-      
-      console.log(`Updated custom aircraft configs:`, updated);
-      return updated;
-    });
+    // Create a deep copy of the existing config
+    const updatedConfigs = { ...DEFAULT_AIRCRAFT_CONFIGS };
     
-    // Force refresh volumes to use new thresholds
-    setTimeout(() => {
-      console.log('Triggering volume update after threshold change');
-      updateAllAudioVolumes();
-    }, 100);
+    // Update with the new configuration
+    updatedConfigs[aircraftType] = newConfig;
+    
+    // If you need to persist this, you might add it to localStorage or similar
+    localStorage.setItem('aircraftConfigs', JSON.stringify(updatedConfigs));
   };
 
   // Add state for debug mode
   const [debugMode, setDebugMode] = useState(false);
+
+  // Add a debugging useEffect to monitor the audio element state
+  useEffect(() => {
+    // Check the audio elements every 10 seconds
+    const audioDebugInterval = setInterval(() => {
+      console.log('===== AUDIO DEBUG CHECK =====');
+      
+      // Check landing-soon.wav state
+      if (landingSoonRef.current) {
+        console.log('landing-soon.wav:', {
+          playing: !landingSoonRef.current.paused,
+          currentTime: landingSoonRef.current.currentTime,
+          duration: landingSoonRef.current.duration,
+          volume: landingSoonRef.current.volume,
+          readyState: landingSoonRef.current.readyState,
+          error: landingSoonRef.current.error,
+          announced: landingSoonAnnouncedRef.current
+        });
+      }
+      
+      // Check we've-arrived.wav state
+      if (weveArrivedRef.current) {
+        console.log('we\'ve-arrived.wav:', {
+          playing: !weveArrivedRef.current.paused,
+          currentTime: weveArrivedRef.current.currentTime,
+          duration: weveArrivedRef.current.duration,
+          volume: weveArrivedRef.current.volume,
+          readyState: weveArrivedRef.current.readyState,
+          error: weveArrivedRef.current.error
+        });
+      }
+      
+      // Check conditions for "We've arrived" announcement
+      console.log('"We\'ve arrived" conditions:', {
+        hasDescendedThrough10k: hasDescendedThrough10kRef.current,
+        landingLightsOffCount: landingLightsOffCount,
+        lastLandingLightsState: lastLandingLightsStateRef.current
+      });
+      
+      console.log('===== END AUDIO DEBUG =====');
+    }, 10000);
+    
+    return () => clearInterval(audioDebugInterval);
+  }, [landingLightsOffCount]);
+
+  // Add function to toggle seatbelt sign state
+  // Add this after the toggleLandingLights function
+  const toggleSeatbeltSign = async () => {
+    console.log("Toggling seatbelt sign...");
+    const newState = !seatbeltSign;
+    setSeatbeltSign(newState);
+    lastSeatbeltStateRef.current = newState;
+    
+    // Also update the flight state
+    setFlightState(prev => ({
+      ...prev,
+      seatbeltSign: newState
+    }));
+    
+    // Process the seatbelt sign change through the handler
+    handleSeatbeltSignChange(newState);
+  };
 
   return (
     <div className="App">
@@ -2961,6 +2976,7 @@ function App() {
             landingLights={landingLights}
             onWingLightToggle={toggleWingLight}
             onLandingLightsToggle={toggleLandingLights}
+            onSeatbeltSignToggle={toggleSeatbeltSign}
           />
           
           <AircraftTypeSelector
@@ -2969,8 +2985,8 @@ function App() {
             onAircraftTypeChange={handleManualAircraftTypeChange}
             detectionMode={aircraftDetectionMode}
             onDetectionModeChange={handleDetectionModeChange}
-            aircraftConfigs={getAircraftConfigs()}
-            onZoneConfigChange={handleZoneConfigChange}
+            aircraftConfigs={getAircraftConfigs() as any}
+            onZoneConfigChange={handleZoneConfigChange as any}
             currentZone={currentZone}
             zoneVolumes={{
               outside: getZoneVolume('outside'),
@@ -3117,6 +3133,20 @@ function App() {
       <audio ref={safetyVideoRef} id="safety-video" preload="auto" />
       <audio ref={fastenSeatbeltRef} id="fasten-seatbelt" preload="auto" />
       <audio ref={beaconLightSoundRef} id="beacon-light-sound" preload="auto" />
+      
+      {/* Fenix-style PA System component */}
+      <FenixStylePA
+        currentZone={currentZone}
+        position={position}
+        thresholds={thresholds}
+      />
+      
+      <AudioControlPanel
+        audioManager={audioManager}
+        currentZone={currentZone}
+        position={position}
+        thresholds={thresholds}
+      />
     </div>
   );
 }
