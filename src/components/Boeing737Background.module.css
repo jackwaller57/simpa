@@ -1,0 +1,25 @@
+.backgroundWithImage {
+  background-image: url('../assets/737max-interface.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  position: relative;
+}
+
+/* Overlay gradient to ensure text is readable */
+.backgroundWithImage::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(to bottom, rgba(60, 70, 90, 0.6), rgba(40, 50, 70, 0.8));
+  z-index: 0;
+}
+
+/* Ensure content appears above the overlay */
+.backgroundWithImage > * {
+  position: relative;
+  z-index: 1;
+} 

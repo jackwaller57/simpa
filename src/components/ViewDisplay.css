@@ -1,47 +1,46 @@
 .view-display-container {
-  background-color: rgba(30, 30, 30, 0.8);
-  border-radius: 8px;
+  background-color: var(--dark-gray, rgba(30, 30, 30, 0.8));
+  border-radius: 5px;
   padding: 15px;
-  margin-bottom: 20px;
-  color: white;
+  margin-bottom: 15px;
+  color: var(--text-light, white);
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
 }
 
 .view-display-container h3 {
-  font-size: 18px;
+  font-size: 16px;
   margin: 0 0 15px 0;
+  color: var(--text-medium, #bbb);
 }
 
-.view-info-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.view-info-row {
+.view-display-row {
   display: flex;
   justify-content: space-between;
   font-size: 14px;
+  padding: 5px;
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+  margin-bottom: 8px;
 }
 
-.view-info-label {
-  color: #bbb;
-  width: 50%;
+.view-display-label {
+  color: var(--text-medium, #bbb);
 }
 
-.view-info-value {
-  color: #4db6ac;
+.view-display-value {
+  color: var(--highlight-blue, #4db6ac);
   font-weight: 500;
+  font-family: 'Courier New', monospace;
 }
 
-.moving-indicator {
+.jetway-moving {
   color: #ffc107;
-  font-style: italic;
-  margin-left: 5px;
-  animation: blink 1s infinite alternate;
+  animation: blink 1s infinite;
 }
 
 @keyframes blink {
-  from { opacity: 1; }
-  to { opacity: 0.5; }
+  0% { opacity: 1; }
+  50% { opacity: 0.5; }
+  100% { opacity: 1; }
 } 

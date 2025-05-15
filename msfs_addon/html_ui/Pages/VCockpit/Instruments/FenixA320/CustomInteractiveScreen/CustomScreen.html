@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="CustomScreen.css" />
+    <script type="text/javascript" src="/JS/coherent.js"></script>
+    <script type="text/javascript" src="/JS/common.js"></script>
+    <script type="text/javascript" src="/JS/dataStorage.js"></script>
+    <script type="text/javascript" src="/JS/debug.js"></script>
+</head>
+
+<body>
+    <script type="text/html" id="CustomScreenTemplate">
+        <div id="CustomScreen">
+            <div id="screen-content">
+                <div class="title">Custom Interactive Screen</div>
+                <div class="button-row">
+                    <div class="button" id="btn1">Button 1</div>
+                    <div class="button" id="btn2">Button 2</div>
+                    <div class="button" id="btn3">Button 3</div>
+                </div>
+                <div class="data-display">
+                    <div class="data-item">
+                        <span class="label">Altitude:</span>
+                        <span class="value" id="altitude-value">0</span>
+                        <span class="unit">ft</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="label">Airspeed:</span>
+                        <span class="value" id="airspeed-value">0</span>
+                        <span class="unit">kts</span>
+                    </div>
+                    <div class="data-item">
+                        <span class="label">Heading:</span>
+                        <span class="value" id="heading-value">0</span>
+                        <span class="unit">°</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </script>
+
+    <script type="text/javascript" src="CustomScreen.js"></script>
+</body>
+</html> 

@@ -1,15 +1,17 @@
 .camera-position-container {
-  background-color: rgba(30, 30, 30, 0.8);
-  border-radius: 8px;
+  background-color: var(--dark-gray, rgba(30, 30, 30, 0.8));
+  border-radius: 5px;
   padding: 15px;
-  margin-bottom: 20px;
-  color: white;
+  margin-bottom: 15px;
+  color: var(--text-light, white);
   box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
 }
 
 .camera-position-container h3 {
-  font-size: 18px;
+  font-size: 16px;
   margin: 0 0 15px 0;
+  color: var(--text-medium, #bbb);
 }
 
 .position-grid {
@@ -22,14 +24,18 @@
   display: flex;
   justify-content: space-between;
   font-size: 14px;
+  padding: 5px;
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
 }
 
 .position-label {
-  color: #bbb;
+  color: var(--text-medium, #bbb);
   width: 50%;
 }
 
 .position-value {
-  color: #4db6ac;
+  color: var(--highlight-blue, #4db6ac);
   font-weight: 500;
+  font-family: 'Courier New', monospace;
 } 

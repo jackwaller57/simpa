@@ -12,6 +12,7 @@ import { getZoneFromPosition, getVolumeForZone } from './zoneFix';
 import { AudioManager } from './audio/AudioManager';
 import { AudioControlPanel } from './components/AudioControlPanel';
 import FenixStylePA from './components/FenixStylePA';
+import Boeing737Interface from './components/Boeing737Interface';
 import './components/AudioControlPanel.css';
 // Import types but rename them to avoid conflicts
 import * as AppTypes from './types';
@@ -2960,164 +2961,44 @@ function App() {
     handleSeatbeltSignChange(newState);
   };
 
+  // Add this function before the return statement
+  const handleMasterVolumeChangeInNew = (volume: number) => {
+    // Convert the volume (0-1) to the range expected by handleVolumeChange (0-100)
+    const volumePercent = Math.round(volume * 100);
+    setMasterVolume(volumePercent);
+    // Also update the audio elements
+    updateAllAudioVolumes();
+  };
+
   return (
     <div className="App">
       <div className="dashboard">
-        <div className="main-panel">
-          {/* Add the ConnectionControl component at the top */}
-          <ConnectionControl 
-            isConnected={simConnectActive}
-            onConnect={handleConnect}
-            onDisconnect={handleDisconnect}
-          />
-          
-          <FlightStatusPanel
-            flightState={flightState}
-            landingLights={landingLights}
-            onWingLightToggle={toggleWingLight}
-            onLandingLightsToggle={toggleLandingLights}
-            onSeatbeltSignToggle={toggleSeatbeltSign}
-          />
-          
-          <AircraftTypeSelector
-            currentAircraftType={selectedAircraftType}
-            detectedAircraftType={flightState.aircraftType}
-            onAircraftTypeChange={handleManualAircraftTypeChange}
-            detectionMode={aircraftDetectionMode}
-            onDetectionModeChange={handleDetectionModeChange}
-            aircraftConfigs={getAircraftConfigs() as any}
-            onZoneConfigChange={handleZoneConfigChange as any}
-            currentZone={currentZone}
-            zoneVolumes={{
-              outside: getZoneVolume('outside'),
-              jetway: getZoneVolume('jetway'),
-              cabin: getZoneVolume('cabin'),
-              cockpit: getZoneVolume('cockpit')
-            }}
-          />
-          
-          <CameraPosition
-            position={cameraPosition}
-            xPosition={flightState.xPosition}
-            yPosition={flightState.yPosition}
-            zPosition={flightState.zPosition}
-            currentZone={currentZone}
-          />
-          
-          <ViewDisplay
-            viewType={flightState.cameraViewType}
-            jetwayState={flightState.jetwayState ? "Attached" : "Detached"}
-            jetwayMoving={flightState.jetwayMoving}
-          />
-          
-          <div className="volume-control">
-            <label>Master Volume: {masterVolume}%</label>
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={masterVolume}
-              onChange={handleVolumeChange}
-              className="volume-slider"
-            />
-          </div>
-          
-          {/* Debug controls */}
-          <div className="debug-controls" style={{ marginTop: '20px', padding: '15px', border: '1px solid #ccc', borderRadius: '5px' }}>
-            <h3 style={{ margin: '0 0 10px 0' }}>Zone Detection Debug</h3>
-            
-            {/* Add Debug Mode toggle */}
-            <div style={{ marginBottom: '10px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <input 
-                  type="checkbox" 
-                  checked={debugMode} 
-                  onChange={() => {
-                    const newMode = !debugMode;
-                    console.log(`Setting debug mode to: ${newMode ? 'ON' : 'OFF'}`);
-                    setDebugMode(newMode);
-                  }}
-                />
-                <span style={{ fontWeight: 'bold', color: debugMode ? '#ff0000' : '#333' }}>
-                  Debug Mode {debugMode ? 'ON' : 'OFF'}
-                </span>
-                {debugMode && <span style={{ fontSize: '12px' }}>(position thresholds disabled)</span>}
-              </label>
-            </div>
-
-            <div style={{ display: 'flex', gap: '10px', marginBottom: '10px', flexWrap: 'wrap' }}>
-              {/* Existing buttons */}
-              <button 
-                onClick={() => {
-                  const newZ = -5; // Jetway zone for most aircraft
-                  console.log(`DEBUG: Simulating Z position: ${newZ}`);
-                  // Update flight state with new position
-                  setFlightState(prevState => ({
-                    ...prevState,
-                    zPosition: newZ
-                  }));
-                  // Force update volumes
-                  setTimeout(updateAllAudioVolumes, 100);
-                }}
-              >
-                Test Jetway Zone
-              </button>
-              <button 
-                onClick={() => {
-                  const newZ = -15; // Cabin zone for most aircraft
-                  console.log(`DEBUG: Simulating Z position: ${newZ}`);
-                  // Update flight state with new position
-                  setFlightState(prevState => ({
-                    ...prevState,
-                    zPosition: newZ
-                  }));
-                  // Force update volumes
-                  setTimeout(updateAllAudioVolumes, 100);
-                }}
-              >
-                Test Cabin Zone
-              </button>
-              <button 
-                onClick={() => {
-                  const newZ = -23; // Cockpit zone for most aircraft
-                  console.log(`DEBUG: Simulating Z position: ${newZ}`);
-                  // Update flight state with new position
-                  setFlightState(prevState => ({
-                    ...prevState,
-                    zPosition: newZ
-                  }));
-                  // Force update volumes
-                  setTimeout(updateAllAudioVolumes, 100);
-                }}
-              >
-                Test Cockpit Zone
-              </button>
-              
-              {/* Force Update button */}
-              <button 
-                onClick={() => {
-                  console.log(`DEBUG: Forcing zone update with current Z = ${flightState.zPosition}`);
-                  // Reset last position to force recalculation
-                  lastZPositionRef.current = null;
-                  // Force update
-                  updateAllAudioVolumes();
-                }}
-                style={{ backgroundColor: '#ff9800', color: 'white', fontWeight: 'bold' }}
-              >
-                Force Update Zone
-              </button>
-            </div>
-            
-            <div>
-              <p>Current Zone: <strong>{currentZone}</strong></p>
-              <p>Current Volume: <strong>{currentVolume.toFixed(1)}%</strong></p>
-              <p>Z-Position: <strong>{flightState.zPosition.toFixed(2)}</strong></p>
-              <p>Last Zone Update: <strong>{Math.round((Date.now() - lastZoneUpdateTimeRef.current) / 100) / 10}s ago</strong></p>
-              <p>Auto-check in: <strong>{Math.max(0, Math.round((ZONE_RECALCULATION_TIMEOUT - (Date.now() - lastZoneUpdateTimeRef.current)) / 100) / 10)}s</strong></p>
-              <p>Position Threshold: <strong>{debugMode ? 'Disabled' : POSITION_THRESHOLD}</strong></p>
-            </div>
-          </div>
-        </div>
+        <Boeing737Interface
+          flightState={flightState}
+          cameraPosition={cameraPosition}
+          currentZone={currentZone}
+          simConnectActive={simConnectActive}
+          onConnect={handleConnect}
+          onDisconnect={handleDisconnect}
+          landingLights={landingLights}
+          onWingLightToggle={toggleWingLight}
+          onLandingLightsToggle={toggleLandingLights}
+          onSeatbeltSignToggle={toggleSeatbeltSign}
+          selectedAircraftType={selectedAircraftType}
+          aircraftDetectionMode={aircraftDetectionMode}
+          onAircraftTypeChange={handleManualAircraftTypeChange}
+          onDetectionModeChange={handleDetectionModeChange}
+          getAircraftConfigs={getAircraftConfigs}
+          onZoneConfigChange={handleZoneConfigChange}
+          zoneVolumes={{
+            outside: getZoneVolume('outside'),
+            jetway: getZoneVolume('jetway'),
+            cabin: getZoneVolume('cabin'),
+            cockpit: getZoneVolume('cockpit')
+          }}
+          masterVolume={masterVolume / 100}
+          onMasterVolumeChange={handleMasterVolumeChangeInNew}
+        />
       </div>
       
       {/* Audio elements */}
@@ -3134,19 +3015,21 @@ function App() {
       <audio ref={fastenSeatbeltRef} id="fasten-seatbelt" preload="auto" />
       <audio ref={beaconLightSoundRef} id="beacon-light-sound" preload="auto" />
       
-      {/* Fenix-style PA System component */}
-      <FenixStylePA
-        currentZone={currentZone}
-        position={position}
-        thresholds={thresholds}
-      />
-      
-      <AudioControlPanel
-        audioManager={audioManager}
-        currentZone={currentZone}
-        position={position}
-        thresholds={thresholds}
-      />
+      {/* Hidden components that manage logic */}
+      <div style={{ display: 'none' }}>
+        <FenixStylePA
+          currentZone={currentZone}
+          position={position}
+          thresholds={thresholds}
+        />
+        
+        <AudioControlPanel
+          audioManager={audioManager}
+          currentZone={currentZone}
+          position={position}
+          thresholds={thresholds}
+        />
+      </div>
     </div>
   );
 }

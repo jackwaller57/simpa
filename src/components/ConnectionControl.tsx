@@ -1,5 +1,4 @@
 import React from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import './ConnectionControl.css';
 
 interface ConnectionControlProps {
@@ -15,26 +14,24 @@ const ConnectionControl: React.FC<ConnectionControlProps> = ({
 }) => {
   return (
     <div className="connection-control">
-      <h3>Connection Control</h3>
-      
       <div className="connection-status">
-        <span className="status-label">Status:</span>
-        <span className={`status-value ${isConnected ? 'status-connected' : 'status-disconnected'}`}>
-          {isConnected ? 'Connected' : 'Disconnected'}
-        </span>
+        <div className={`status-indicator ${isConnected ? 'connected' : 'disconnected'}`} />
+        <div className="status-text">
+          Status: <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
+        </div>
       </div>
       
       <div className="connection-buttons">
         <button 
-          className="connect-button"
+          className="connect-button" 
           onClick={onConnect}
           disabled={isConnected}
         >
-          Connect to SimConnect
+          Connect
         </button>
         
         <button 
-          className="disconnect-button"
+          className="disconnect-button" 
           onClick={onDisconnect}
           disabled={!isConnected}
         >

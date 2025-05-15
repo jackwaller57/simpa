@@ -1,0 +1,343 @@
+:root {
+    --outside-color: #ff6b6b;
+    --jetway-color: #4ecdc4;
+    --cabin-color: #45b7d1;
+    --cockpit-color: #96ceb4;
+    --highlight-color: #4a9eff;
+    --background-color: #2c2c2c;
+    --panel-bg-color: #3a3a3a;
+    --text-color: #ffffff;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html, body {
+    font-family: 'Roboto', Arial, sans-serif;
+    font-size: 14px;
+    color: var(--text-color);
+    background-color: var(--background-color);
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    user-select: none;
+}
+
+#audio-control-panel {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 16px;
+    box-sizing: border-box;
+    overflow-y: auto;
+}
+
+.title-bar {
+    text-align: center;
+    margin-bottom: 16px;
+}
+
+h3, h4, h5 {
+    margin-top: 0;
+    margin-bottom: 12px;
+    color: var(--highlight-color);
+}
+
+h3 {
+    font-size: 22px;
+    text-align: center;
+    margin-bottom: 16px;
+}
+
+h4 {
+    font-size: 16px;
+    border-bottom: 1px solid var(--highlight-color);
+    padding-bottom: 4px;
+}
+
+h5 {
+    font-size: 14px;
+    margin-top: 12px;
+}
+
+.control-section, .zone-volumes, .status-section, .debug-section {
+    margin-bottom: 20px;
+    padding: 10px;
+    background-color: var(--panel-bg-color);
+    border-radius: 4px;
+}
+
+.control-group {
+    display: flex;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.control-group label {
+    flex: 0 0 80px;
+    font-size: 14px;
+}
+
+.control-group input[type="range"] {
+    flex: 1;
+    margin: 0 10px;
+    height: 8px;
+    background: linear-gradient(to right, var(--highlight-color) var(--value, 0%), #6a6a6a var(--value, 0%));
+    border-radius: 4px;
+    -webkit-appearance: none;
+}
+
+.control-group input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #ffffff;
+    cursor: pointer;
+}
+
+.control-group span {
+    flex: 0 0 40px;
+    text-align: right;
+    font-size: 14px;
+}
+
+.buttons-container {
+    display: flex;
+    justify-content: space-between;
+    margin: 10px 0;
+    gap: 10px;
+}
+
+button {
+    background-color: var(--highlight-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    padding: 8px 16px;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    flex: 1;
+}
+
+button:hover {
+    background-color: #3a7ecf;
+}
+
+.save-confirmation {
+    text-align: center;
+    color: #4caf50;
+    margin-top: 10px;
+    font-weight: bold;
+}
+
+.status-section p {
+    margin: 5px 0;
+}
+
+.status-section span {
+    font-weight: bold;
+    color: var(--highlight-color);
+}
+
+.current-status {
+    margin-bottom: 15px;
+}
+
+.position-test {
+    border-top: 1px dashed #555;
+    padding-top: 10px;
+}
+
+.position-test input[type="range"] {
+    width: 100%;
+    margin: 10px 0;
+    height: 8px;
+    background: linear-gradient(to right, 
+        var(--outside-color) 0%, 
+        var(--outside-color) 25%, 
+        var(--jetway-color) 25%, 
+        var(--jetway-color) 50%, 
+        var(--cabin-color) 50%, 
+        var(--cabin-color) 75%, 
+        var(--cockpit-color) 75%, 
+        var(--cockpit-color) 100%
+    );
+    border-radius: 4px;
+    -webkit-appearance: none;
+}
+
+.position-test input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: #ffffff;
+    cursor: pointer;
+}
+
+.position-markers {
+    display: flex;
+    position: relative;
+    width: 100%;
+    height: 20px;
+    margin-top: 5px;
+}
+
+.position-markers .marker {
+    position: absolute;
+    transform: translateX(-50%);
+    font-size: 12px;
+    color: #ccc;
+}
+
+.audio-status {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding: 8px;
+    background-color: var(--panel-bg-color);
+    border-radius: 4px;
+}
+
+.status-text {
+    font-weight: bold;
+}
+
+.status-text.running {
+    color: #4caf50;
+}
+
+.status-text.suspended {
+    color: #ff9800;
+}
+
+.status-text.closed, .status-text.error {
+    color: #f44336;
+}
+
+.wake-button {
+    margin-top: 5px;
+    background-color: #ff9800;
+    font-size: 12px;
+    padding: 5px 10px;
+}
+
+.wake-button:hover {
+    background-color: #e08600;
+}
+
+.force-update-button {
+    background-color: #4caf50;
+    font-size: 12px;
+    padding: 5px 10px;
+}
+
+.force-update-button:hover {
+    background-color: #388e3c;
+}
+
+.debug-section {
+    border: 1px dashed #ff9800;
+}
+
+.toggle-control {
+    display: flex;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.toggle-control label {
+    flex: 1;
+    font-size: 14px;
+}
+
+.toggle-control input[type="checkbox"] {
+    width: 36px;
+    height: 18px;
+    -webkit-appearance: none;
+    background-color: #6a6a6a;
+    border-radius: 12px;
+    position: relative;
+    transition: background-color 0.3s;
+    cursor: pointer;
+}
+
+.toggle-control input[type="checkbox"]:checked {
+    background-color: var(--highlight-color);
+}
+
+.toggle-control input[type="checkbox"]::before {
+    content: '';
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background-color: white;
+    transition: left 0.3s;
+}
+
+.toggle-control input[type="checkbox"]:checked::before {
+    left: 20px;
+}
+
+.effect-toggles {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.effect-toggles .toggle-control {
+    flex: 0 0 calc(33.333% - 10px);
+    margin-bottom: 5px;
+}
+
+.footer {
+    margin-top: auto;
+    text-align: center;
+    font-size: 12px;
+    color: #888;
+    padding: 10px 0;
+}
+
+/* Zone-specific colors for sliders */
+[data-zone="outside"] input[type="range"]::-webkit-slider-thumb {
+    background: var(--outside-color);
+}
+
+[data-zone="jetway"] input[type="range"]::-webkit-slider-thumb {
+    background: var(--jetway-color);
+}
+
+[data-zone="cabin"] input[type="range"]::-webkit-slider-thumb {
+    background: var(--cabin-color);
+}
+
+[data-zone="cockpit"] input[type="range"]::-webkit-slider-thumb {
+    background: var(--cockpit-color);
+}
+
+/* Make the panel responsive */
+@media (max-width: 400px) {
+    .control-group label {
+        flex: 0 0 60px;
+    }
+    
+    button {
+        font-size: 12px;
+        padding: 6px 12px;
+    }
+    
+    .effect-toggles .toggle-control {
+        flex: 0 0 100%;
+    }
+} 

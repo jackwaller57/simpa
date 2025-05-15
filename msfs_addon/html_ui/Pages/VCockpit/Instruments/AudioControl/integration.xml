@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<SimBase.Document Type="InstrumentConfig" version="1,0">
+  <Instrument>
+    <Name>Audio Control Panel</Name>
+    <Source>html_ui/Pages/VCockpit/Instruments/AudioControl/AudioControl.html</Source>
+    <ExpectedWidth>250</ExpectedWidth>
+    <ExpectedHeight>400</ExpectedHeight>
+  </Instrument>
+</SimBase.Document> 

@@ -1,0 +1,242 @@
+/* Boarding Music Panel Styles */
+.boarding-music-panel {
+  display: flex;
+  flex-direction: column;
+  background-color: rgba(120, 120, 140, 0.9);
+  border-radius: 8px;
+  padding: 10px;
+  font-family: Arial, sans-serif;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.boarding-music-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 0;
+  margin-bottom: 10px;
+}
+
+.mode-indicator {
+  display: flex;
+  align-items: center;
+  background-color: rgba(80, 80, 100, 0.8);
+  padding: 5px 10px;
+  border-radius: 4px;
+}
+
+.mode-indicator span {
+  color: white;
+  font-size: 14px;
+  margin-right: 10px;
+}
+
+.mode-button {
+  background-color: rgba(100, 100, 120, 0.9);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 15px;
+  margin: 0 5px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.mode-button.active {
+  background-color: rgba(80, 180, 250, 0.8);
+}
+
+.back-button {
+  display: flex;
+  align-items: center;
+  background-color: rgba(0, 150, 250, 0.9);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 15px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.back-button svg {
+  margin-right: 5px;
+}
+
+.panel-title {
+  color: white;
+  font-size: 20px;
+  font-weight: bold;
+  margin: 0 auto;
+}
+
+.boarding-music-content {
+  display: flex;
+  gap: 15px;
+  padding: 5px 0;
+  flex: 1;
+}
+
+.program-selection {
+  flex: 2;
+  background-color: rgba(80, 80, 100, 0.8);
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.program-selection-header {
+  color: white;
+  font-size: 14px;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.music-list {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  overflow-y: auto;
+  max-height: 300px;
+}
+
+.music-item {
+  background-color: rgba(100, 100, 120, 0.7);
+  color: white;
+  padding: 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.music-item:hover, .music-item.selected {
+  background-color: rgba(80, 180, 250, 0.6);
+}
+
+.list-controls {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 15px;
+}
+
+.list-control-button {
+  background-color: rgba(80, 180, 250, 0.8);
+  border: none;
+  border-radius: 4px;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.now-playing {
+  flex: 1;
+  background-color: rgba(80, 80, 100, 0.8);
+  border-radius: 6px;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+}
+
+.now-playing-header {
+  color: white;
+  font-size: 14px;
+  margin-bottom: 10px;
+  text-align: center;
+}
+
+.now-playing-info {
+  flex: 1;
+  background-color: rgba(100, 100, 120, 0.7);
+  border-radius: 4px;
+  padding: 10px;
+  margin-bottom: 10px;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.player-controls {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+.player-control-button {
+  background-color: rgba(80, 180, 250, 0.8);
+  border: none;
+  border-radius: 4px;
+  width: 35px;
+  height: 35px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.bottom-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  margin-top: 10px;
+}
+
+.volume-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.volume-label {
+  background-color: rgba(100, 100, 120, 0.9);
+  color: white;
+  padding: 5px 10px;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.volume-button {
+  background-color: rgba(100, 100, 120, 0.9);
+  border: none;
+  border-radius: 4px;
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.volume-button.off {
+  background-color: rgba(200, 50, 50, 0.8);
+}
+
+.status-button {
+  background-color: rgba(80, 180, 250, 0.8);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 15px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.brightness-button {
+  background-color: rgba(80, 180, 250, 0.8);
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 15px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+
+

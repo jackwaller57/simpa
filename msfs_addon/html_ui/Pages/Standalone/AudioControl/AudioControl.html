@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>Aircraft Audio Control</title>
+    <link rel="stylesheet" href="AudioControl.css" />
+    <script type="text/javascript" src="AudioControl.js"></script>
+</head>
+<body>
+    <div id="audio-control-panel">
+        <div class="title-bar">
+            <h3>Aircraft Audio Control</h3>
+        </div>
+        
+        <!-- Audio system status indicator -->
+        <div class="audio-status">
+            <div>
+                Audio System: <span id="audio-context-status" class="status-text">Unknown</span>
+                <div id="wake-button-container" style="display: none;">
+                    <button id="wake-button" class="wake-button">Wake Up Audio</button>
+                </div>
+            </div>
+            <div>
+                <button id="force-update-button" class="force-update-button" title="Apply all volume settings">
+                    Force Update Audio
+                </button>
+            </div>
+        </div>
+        
+        <!-- Main controls -->
+        <div class="control-section">
+            <h4>Main Controls</h4>
+            <div class="control-group">
+                <label>Master Volume</label>
+                <input type="range" id="master-volume" min="0" max="100" value="100" />
+                <span id="master-volume-display">100%</span>
+            </div>
+
+            <div class="control-group">
+                <label>Fade Duration</label>
+                <input type="range" id="fade-duration" min="0.1" max="3" step="0.1" value="1.5" />
+                <span id="fade-duration-display">1.5s</span>
+            </div>
+            
+            <div class="buttons-container">
+                <button id="reset-button">Reset Defaults</button>
+                <button id="save-button">Save Settings</button>
+            </div>
+            
+            <div id="save-confirmation" class="save-confirmation" style="display: none;">
+                Settings saved successfully!
+            </div>
+            
+            <div class="toggle-control">
+                <label>Debug Mode</label>
+                <input type="checkbox" id="debug-toggle" />
+            </div>
+        </div>
+
+        <!-- Zone volumes -->
+        <div class="zone-volumes">
+            <h4>Zone Volumes</h4>
+            <div class="control-group" data-zone="outside">
+                <label>Outside</label>
+                <input type="range" id="outside-volume" min="0" max="100" value="45" />
+                <span id="outside-volume-display">45%</span>
+            </div>
+            <div class="control-group" data-zone="jetway">
+                <label>Jetway</label>
+                <input type="range" id="jetway-volume" min="0" max="100" value="80" />
+                <span id="jetway-volume-display">80%</span>
+            </div>
+            <div class="control-group" data-zone="cabin">
+                <label>Cabin</label>
+                <input type="range" id="cabin-volume" min="0" max="100" value="70" />
+                <span id="cabin-volume-display">70%</span>
+            </div>
+            <div class="control-group" data-zone="cockpit">
+                <label>Cockpit</label>
+                <input type="range" id="cockpit-volume" min="0" max="100" value="65" />
+                <span id="cockpit-volume-display">65%</span>
+            </div>
+        </div>
+        
+        <!-- Status and position visualization -->
+        <div class="status-section">
+            <div class="current-status">
+                <p>Current Zone: <span id="current-zone">Outside</span></p>
+                <p>Aircraft Position: <span id="aircraft-position">0.0</span></p>
+            </div>
+            
+            <div class="position-test">
+                <h5>Test Position</h5>
+                <input type="range" id="test-position" min="-25" max="1" step="0.1" value="0" />
+                <div class="position-markers">
+                    <span class="marker" style="left: 4%;">Outside</span>
+                    <span class="marker" style="left: 31%;">Jetway</span>
+                    <span class="marker" style="left: 67%;">Cabin</span>
+                    <span class="marker" style="left: 93%;">Cockpit</span>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Debug section - only shown when debug mode is enabled -->
+        <div id="debug-section" class="debug-section" style="display: none;">
+            <h4>Debug Options</h4>
+            
+            <div class="effect-toggles">
+                <div class="toggle-control">
+                    <label>Reverb</label>
+                    <input type="checkbox" id="reverb-toggle" />
+                </div>
+                
+                <div class="toggle-control">
+                    <label>Delay</label>
+                    <input type="checkbox" id="delay-toggle" />
+                </div>
+                
+                <div class="toggle-control">
+                    <label>Compression</label>
+                    <input type="checkbox" id="compression-toggle" />
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Use L:AUDIO_POSITION SimVar to control aircraft position</p>
+        </div>
+    </div>
+</body>
+</html> 

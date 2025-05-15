@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <link rel="stylesheet" href="/Pages/VCockpit/Panels/AudioControlSystem/AudioControlSystem.css" />
+    <script type="text/javascript" src="/Pages/VCockpit/Panels/AudioControlSystem/AudioControlSystem.js"></script>
+    <script type="text/javascript" src="/JS/coherent.js"></script>
+    <script type="text/javascript" src="/JS/common.js"></script>
+    <script type="text/javascript" src="/JS/dataStorage.js"></script>
+    <script type="text/javascript" src="/JS/buttons.js"></script>
+    <script type="text/javascript" src="/JS/SimVar.js"></script>
+    <script type="text/javascript" src="/JS/Services/ToolBarPanelManager.js"></script>
+</head>
+<body class="background">
+    <div id="AudioControlSystemPanel">
+        <div class="header">
+            <h1>Aircraft Audio Control System</h1>
+            <div class="window-controls">
+                <div id="minimize-btn" class="window-control minimize"></div>
+                <div id="close-btn" class="window-control close"></div>
+            </div>
+        </div>
+        
+        <div class="audio-control-panel">
+            <!-- Master controls -->
+            <div class="control-section">
+                <h2>Main Controls</h2>
+                <div class="control-group">
+                    <label>Master Volume</label>
+                    <input type="range" id="master-volume" min="0" max="100" value="100" />
+                    <span id="master-volume-display">100%</span>
+                </div>
+
+                <div class="control-group">
+                    <label>Fade Duration</label>
+                    <input type="range" id="fade-duration" min="0.1" max="3" step="0.1" value="1.5" />
+                    <span id="fade-duration-display">1.5s</span>
+                </div>
+            </div>
+
+            <!-- Zone volumes -->
+            <div class="zone-volumes">
+                <h2>Zone Volumes</h2>
+                <div class="control-group" data-zone="outside">
+                    <label>Outside</label>
+                    <input type="range" id="outside-volume" min="0" max="100" value="45" />
+                    <span id="outside-volume-display">45%</span>
+                </div>
+                <div class="control-group" data-zone="jetway">
+                    <label>Jetway</label>
+                    <input type="range" id="jetway-volume" min="0" max="100" value="80" />
+                    <span id="jetway-volume-display">80%</span>
+                </div>
+                <div class="control-group" data-zone="cabin">
+                    <label>Cabin</label>
+                    <input type="range" id="cabin-volume" min="0" max="100" value="70" />
+                    <span id="cabin-volume-display">70%</span>
+                </div>
+                <div class="control-group" data-zone="cockpit">
+                    <label>Cockpit</label>
+                    <input type="range" id="cockpit-volume" min="0" max="100" value="65" />
+                    <span id="cockpit-volume-display">65%</span>
+                </div>
+            </div>
+
+            <!-- Status and current zone -->
+            <div class="status-section">
+                <h2>Status</h2>
+                <div class="status-info">
+                    <div class="status-row">
+                        <span class="status-label">Current Zone:</span>
+                        <span id="current-zone" class="status-value">Outside</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Position:</span>
+                        <span id="aircraft-position" class="status-value">0.0</span>
+                    </div>
+                    <div class="status-row">
+                        <span class="status-label">Audio System:</span>
+                        <span id="audio-status" class="status-value">Unknown</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Buttons -->
+            <div class="button-container">
+                <button id="reset-button" class="action-button">Reset Defaults</button>
+                <button id="wake-button" class="action-button">Wake Audio System</button>
+                <button id="force-update-button" class="action-button">Force Update</button>
+            </div>
+            
+            <!-- Zone visualization -->
+            <div class="zone-visualizer">
+                <div class="zone-marker" id="outside-zone" data-zone="outside">
+                    <div class="zone-label">Outside</div>
+                </div>
+                <div class="zone-marker" id="jetway-zone" data-zone="jetway">
+                    <div class="zone-label">Jetway</div>
+                </div>
+                <div class="zone-marker" id="cabin-zone" data-zone="cabin">
+                    <div class="zone-label">Cabin</div>
+                </div>
+                <div class="zone-marker" id="cockpit-zone" data-zone="cockpit">
+                    <div class="zone-label">Cockpit</div>
+                </div>
+                <div id="position-marker">
+                    <div id="position-label">Current</div>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html> 

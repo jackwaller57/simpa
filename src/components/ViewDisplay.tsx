@@ -15,18 +15,16 @@ const ViewDisplay: React.FC<ViewDisplayProps> = ({
   return (
     <div className="view-display-container">
       <h3>View Information</h3>
-      <div className="view-info-grid">
-        <div className="view-info-row">
-          <span className="view-info-label">View Type:</span>
-          <span className="view-info-value">{viewType}</span>
-        </div>
-        <div className="view-info-row">
-          <span className="view-info-label">Jetway:</span>
-          <span className="view-info-value">
-            {jetwayState}
-            {jetwayMoving && <span className="moving-indicator"> (Moving)</span>}
-          </span>
-        </div>
+      <div className="view-display-row">
+        <span className="view-display-label">Camera View:</span>
+        <span className="view-display-value">{viewType || 'Unknown'}</span>
+      </div>
+      <div className="view-display-row">
+        <span className="view-display-label">Jetway:</span>
+        <span className="view-display-value">
+          {jetwayState}
+          {jetwayMoving && <span className="jetway-moving"> (Moving)</span>}
+        </span>
       </div>
     </div>
   );

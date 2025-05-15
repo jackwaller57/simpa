@@ -1,0 +1,144 @@
+{
+  "content": [
+    {
+      "path": "html_ui/Pages/VCockpit/Panels/AudioControlSystem/AudioControlSystem.html",
+      "size": 0,
+      "date": 0
+    },
+    {
+      "path": "html_ui/Pages/VCockpit/Panels/AudioControlSystem/AudioControlSystem.js",
+      "size": 0,
+      "date": 0
+    },
+    {
+      "path": "html_ui/Pages/VCockpit/Panels/AudioControlSystem/AudioControlSystem.css",
+      "size": 0,
+      "date": 0
+    },
+    {
+      "path": "html_ui/Pages/VCockpit/Panels/AudioControlSystem/Icon_Audio.svg",
+      "size": 0,
+      "date": 0
+    },
+    {
+      "path": "scripts/aircraft_integration.js",
+      "size": 0,
+      "date": 0
+    },
+    {
+      "path": "html_ui/Pages/VCockpit/Instruments/AudioControl/AudioControl.html",
+      "size": 0,
+      "date": 0
+    },
+    {
+      "path": "html_ui/Pages/VCockpit/Instruments/AudioControl/AudioControl.js",
+      "size": 0,
+      "date": 0
+    },
+    {
+      "path": "html_ui/Pages/VCockpit/Instruments/AudioControl/AudioControl.css",
+      "size": 0,
+      "date": 0
+    },
+    {
+      "path": "html_ui/Pages/VCockpit/Instruments/AudioControl/panel.cfg",
+      "size": 0,
+      "date": 0
+    },
+    {
+      "path": "html_ui/Pages/VCockpit/Instruments/AudioControl/integration.xml",
+      "size": 0,
+      "date": 0
+    },
+    {
+      "path": "html_ui/Pages/VCockpit/Instruments/AudioControl/sounds/README.txt",
+      "size": 0,
+      "date": 0
+    },
+    {
+      "path": "README.md",
+      "size": 0,
+      "date": 0
+    },
+    {
+      "path": "AIRCRAFT_INTEGRATION.md",
+      "size": 0,
+      "date": 0
+    },
+    {
+      "path": "AUDIO_SAMPLES.md",
+      "size": 0,
+      "date": 0
+    },
+    {
+      "path": "IMPLEMENTATION_NOTES.md",
+      "size": 0,
+      "date": 0
+    },
+    {
+      "path": "COMPARISON.md",
+      "size": 0,
+      "date": 0
+    },
+    {
+      "path": "manifest.json",
+      "size": 315,
+      "date": 132952087800000000
+    },
+    {
+      "path": "html_ui/Pages/Standalone/AudioControl/AudioControl.html",
+      "size": 4055,
+      "date": 132952087800000000
+    },
+    {
+      "path": "html_ui/Pages/Standalone/AudioControl/AudioControl.js",
+      "size": 25580,
+      "date": 132952087800000000
+    },
+    {
+      "path": "html_ui/Pages/Standalone/AudioControl/AudioControl.css",
+      "size": 5700,
+      "date": 132952087800000000
+    },
+    {
+      "path": "html_ui/Pages/Standalone/AudioControl/standalone.js",
+      "size": 2380,
+      "date": 132952087800000000
+    },
+    {
+      "path": "html_ui/Pages/Standalone/AudioControl/icon_audio.svg",
+      "size": 385,
+      "date": 132952087800000000
+    },
+    {
+      "path": "html_ui/InGamePanels.js",
+      "size": 2000,
+      "date": 132952087800000000
+    },
+    {
+      "path": "scripts/aircraft_integration.js",
+      "size": 9300,
+      "date": 132952087800000000
+    },
+    {
+      "path": "html_ui/Pages/VCockpit/Instruments/FenixA320/CustomInteractiveScreen/CustomScreen.html",
+      "size": 1234,
+      "date": 132123456789
+    },
+    {
+      "path": "html_ui/Pages/VCockpit/Instruments/FenixA320/CustomInteractiveScreen/CustomScreen.css",
+      "size": 1234,
+      "date": 132123456789
+    },
+    {
+      "path": "html_ui/Pages/VCockpit/Instruments/FenixA320/CustomInteractiveScreen/CustomScreen.js",
+      "size": 1234,
+      "date": 132123456789
+    },
+    {
+      "path": "html_ui/Pages/VCockpit/Instruments/FenixA320/CustomInteractiveScreen/panel.cfg",
+      "size": 1234,
+      "date": 132123456789
+    }
+  ]
+} 

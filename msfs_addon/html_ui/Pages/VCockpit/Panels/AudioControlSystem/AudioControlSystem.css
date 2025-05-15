@@ -1,0 +1,338 @@
+:root {
+    --msfs-blue: #3690e8;
+    --msfs-dark-blue: #1a2d40;
+    --msfs-light-blue: #84b3e8;
+    --msfs-highlight: #bae0ff;
+    --msfs-text: #ffffff;
+    --msfs-background: rgba(13, 19, 28, 0.95);
+    --msfs-border: rgba(54, 144, 232, 0.3);
+    --msfs-header: #2a3e58;
+    --outside-color: #ff6b6b;
+    --jetway-color: #4ecdc4;
+    --cabin-color: #45b7d1;
+    --cockpit-color: #96ceb4;
+}
+
+* {
+    box-sizing: border-box;
+    user-select: none;
+}
+
+html, body {
+    font-family: 'Roboto', Arial, sans-serif;
+    font-size: 14px;
+    color: var(--msfs-text);
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+}
+
+.background {
+    background-color: transparent;
+}
+
+#AudioControlSystemPanel {
+    position: absolute;
+    top: 100px;
+    left: 100px;
+    width: 400px;
+    background-color: var(--msfs-background);
+    border: 1px solid var(--msfs-border);
+    border-radius: 4px;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.header {
+    background-color: var(--msfs-header);
+    padding: 10px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: move;
+    border-bottom: 1px solid var(--msfs-border);
+}
+
+.header h1 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--msfs-highlight);
+    flex: 1;
+}
+
+.window-controls {
+    display: flex;
+    gap: 8px;
+}
+
+.window-control {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.minimize {
+    background-color: #f1c40f;
+}
+
+.minimize:hover {
+    background-color: #f39c12;
+}
+
+.close {
+    background-color: #e74c3c;
+}
+
+.close:hover {
+    background-color: #c0392b;
+}
+
+.minimize::before {
+    content: "";
+    width: 8px;
+    height: 2px;
+    background-color: rgba(0, 0, 0, 0.7);
+}
+
+.close::before, .close::after {
+    content: "";
+    position: absolute;
+    width: 8px;
+    height: 2px;
+    background-color: rgba(0, 0, 0, 0.7);
+}
+
+.close::before {
+    transform: rotate(45deg);
+}
+
+.close::after {
+    transform: rotate(-45deg);
+}
+
+.audio-control-panel {
+    padding: 15px;
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    overflow-y: auto;
+    max-height: calc(100vh - 200px);
+}
+
+h2 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    color: var(--msfs-highlight);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    border-bottom: 1px solid var(--msfs-border);
+    padding-bottom: 5px;
+}
+
+.control-section, .zone-volumes, .status-section {
+    background-color: rgba(20, 30, 45, 0.5);
+    border: 1px solid var(--msfs-border);
+    border-radius: 4px;
+    padding: 15px;
+}
+
+.control-group {
+    display: flex;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+label {
+    flex: 0 0 80px;
+    color: var(--msfs-text);
+    font-size: 13px;
+}
+
+input[type="range"] {
+    flex: 1;
+    height: 4px;
+    -webkit-appearance: none;
+    background: var(--msfs-dark-blue);
+    border-radius: 2px;
+    outline: none;
+    margin: 0 15px;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--msfs-blue);
+    border: 2px solid var(--msfs-highlight);
+    cursor: pointer;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.3);
+}
+
+span {
+    flex: 0 0 40px;
+    text-align: right;
+    color: var(--msfs-light-blue);
+    font-size: 13px;
+}
+
+.button-container {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin: 5px 0;
+}
+
+.action-button {
+    background-color: var(--msfs-dark-blue);
+    color: var(--msfs-text);
+    border: 1px solid var(--msfs-blue);
+    border-radius: 4px;
+    padding: 8px 15px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.2s;
+}
+
+.action-button:hover {
+    background-color: var(--msfs-blue);
+    transform: translateY(-1px);
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+}
+
+.action-button:active {
+    transform: translateY(0);
+    box-shadow: none;
+}
+
+/* Status section styling */
+.status-info {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.status-label {
+    font-size: 13px;
+    color: var(--msfs-text);
+    flex: 0 0 auto;
+}
+
+.status-value {
+    font-size: 13px;
+    color: var(--msfs-light-blue);
+    flex: 0 0 auto;
+    font-weight: 500;
+}
+
+/* Zone visualizer */
+.zone-visualizer {
+    position: relative;
+    height: 50px;
+    background-color: rgba(20, 30, 45, 0.5);
+    border: 1px solid var(--msfs-border);
+    border-radius: 4px;
+    margin-top: 10px;
+}
+
+.zone-marker {
+    position: absolute;
+    height: 100%;
+    background-color: rgba(54, 144, 232, 0.15);
+    top: 0;
+    border-left: 1px dashed rgba(54, 144, 232, 0.5);
+    border-right: 1px dashed rgba(54, 144, 232, 0.5);
+}
+
+#outside-zone {
+    left: 0%;
+    width: 20%;
+    background-color: rgba(255, 107, 107, 0.15);
+    border-left: none;
+}
+
+#jetway-zone {
+    left: 20%;
+    width: 30%;
+    background-color: rgba(78, 205, 196, 0.15);
+}
+
+#cabin-zone {
+    left: 50%;
+    width: 30%;
+    background-color: rgba(69, 183, 209, 0.15);
+}
+
+#cockpit-zone {
+    left: 80%;
+    width: 20%;
+    background-color: rgba(150, 206, 180, 0.15);
+    border-right: none;
+}
+
+.zone-label {
+    position: absolute;
+    bottom: 2px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    color: var(--msfs-text);
+    white-space: nowrap;
+}
+
+#position-marker {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 2px;
+    height: 100%;
+    background-color: #ffffff;
+    z-index: 10;
+}
+
+#position-label {
+    position: absolute;
+    top: -16px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 10px;
+    color: #ffffff;
+    white-space: nowrap;
+    background-color: var(--msfs-blue);
+    padding: 2px 4px;
+    border-radius: 2px;
+}
+
+/* Zone-specific colors for sliders */
+[data-zone="outside"] input[type="range"]::-webkit-slider-thumb {
+    background: var(--outside-color);
+}
+
+[data-zone="jetway"] input[type="range"]::-webkit-slider-thumb {
+    background: var(--jetway-color);
+}
+
+[data-zone="cabin"] input[type="range"]::-webkit-slider-thumb {
+    background: var(--cabin-color);
+}
+
+[data-zone="cockpit"] input[type="range"]::-webkit-slider-thumb {
+    background: var(--cockpit-color);
+} 

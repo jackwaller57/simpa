@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ModelInfo>
+  <GUID>{2A3B4C5D-6E7F-8A9B-0C1D-2E3F4A5B6C7D}</GUID>
+  <ApproachSpeedFlapSetting>0</ApproachSpeedFlapSetting>
+  <CustomBehavior></CustomBehavior>
+  <Behaviors>
+    <Include ModelBehaviorFile="Asobo\Common.xml"/>
+    <Include ModelBehaviorFile="Asobo\PMDG\Common.xml"/>
+    <Include ModelBehaviorFile="Asobo\Exterior.xml"/>
+    <Include ModelBehaviorFile="Asobo\Interior.xml"/>
+    <Include ModelBehaviorFile="Asobo\Lights.xml"/>
+    <Include ModelBehaviorFile="Asobo\Cockpit.xml"/>
+  </Behaviors>
+  <PartInfo>
+    <Name>INTERACTIVE_SCREEN</Name>
+    <Component>
+      <Placement>
+        <!-- This position needs to be adjusted based on where you want the screen in the cockpit -->
+        <Position X="0.0" Y="0.0" Z="0.0"/>
+        <Scale X="1.0" Y="1.0" Z="1.0"/>
+      </Placement>
+      <PlacementB>
+        <!-- This is an alternate position if needed -->
+        <Position X="0.0" Y="0.0" Z="0.0"/>
+        <Scale X="1.0" Y="1.0" Z="1.0"/>
+      </PlacementB>
+    </Component>
+    <!-- Define the custom screen object -->
+    <Component ID="SCREEN_DISPLAY">
+      <Placement>
+        <!-- Position relative to the parent component -->
+        <Position X="0.0" Y="0.0" Z="0.0"/>
+        <Scale X="0.2" Y="0.2" Z="0.2"/>
+      </Placement>
+      <PrimaryPart InstanceID="1" ParentMost="true">
+        <PartsVS>
+          <Offsets>
+            <Offset Type="CustomDisplay"/>
+          </Offsets>
+        </PartsVS>
+      </PrimaryPart>
+    </Component>
+  </PartInfo>
+</ModelInfo> 
